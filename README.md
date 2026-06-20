@@ -197,6 +197,30 @@ You can also run the agent service and the Streamlit app locally without Docker,
 
 4. Open your browser and navigate to the URL provided by Streamlit (usually `http://localhost:8501`).
 
+## Knowledge Card System Database
+
+The knowledge card generation and review planning system uses the existing PostgreSQL service in `compose.yaml`. Connection settings are read from environment variables:
+
+- `POSTGRES_USER`
+- `POSTGRES_PASSWORD`
+- `POSTGRES_HOST`
+- `POSTGRES_PORT`
+- `POSTGRES_DB`
+
+Initialize the card system tables with `src/card_system/db_schema.sql` or by calling `init_card_system_db()` from `src/card_system/storage.py`.
+
+The database schema contains these tables:
+
+- `users`: stores users and includes a default user for local single-user workflows.
+- `documents`: stores learning materials, including title, content, optional file path, and creation time.
+- `document_chunks`: stores document chunks for later RAG indexing and retrieval.
+- `knowledge_cards`: stores generated knowledge cards, including summary, keywords, explanation, examples, mistakes, related concepts, and source text.
+- `quiz_questions`: stores generated quiz questions linked to knowledge cards.
+- `answer_records`: stores user answers, correctness, score, and feedback.
+- `wrong_questions`: stores wrong-answer history and error counts for review planning.
+- `review_plans`: stores review plan metadata and weak points.
+- `review_tasks`: stores per-day review tasks linked to a review plan.
+
 ## Projects built with or inspired by agent-service-toolkit
 
 The following are a few of the public projects that drew code or inspiration from this repo.
