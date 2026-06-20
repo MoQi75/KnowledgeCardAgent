@@ -8,12 +8,14 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langchain_core.runnables import RunnableConfig
 from langgraph.graph import END, MessagesState, StateGraph
 
+from card_system.document_loader import DocumentLoadError, load_text
 from card_system.prompts import (
     CARD_GENERATION_PROMPT,
     KNOWLEDGE_EXTRACTION_PROMPT,
     QUIZ_GENERATION_PROMPT,
     REVIEW_PLAN_PROMPT,
 )
+from card_system.rag import build_rag_context
 from core import get_model, settings
 from schema.card import KnowledgeCard, KnowledgeCardList
 from schema.quiz import QuizQuestion, QuizQuestionList
@@ -23,7 +25,7 @@ logger = logging.getLogger(__name__)
 
 
 class CardReviewState(MessagesState, total=False):
-    """知识卡片复习智能体的运行状态。"""
+    """State for the knowledge card review agent."""
 
     input_text: str
     topic: str
@@ -31,6 +33,8 @@ class CardReviewState(MessagesState, total=False):
     cards: KnowledgeCardList
     quizzes: QuizQuestionList
     review_plan: ReviewPlan
+    rag_context: str
+    document_chunks: list[dict[str, Any]]
     errors: list[str]
 
 
@@ -50,7 +54,6 @@ def _get_last_user_text(state: CardReviewState) -> str:
 
 
 def _extract_json_object(text: str) -> dict[str, Any]:
-    """从模型输出中提取 JSON 对象，兼容 ```json 代码块。"""
     cleaned = text.strip()
     fenced = re.search(r"```(?:json)?\s*(.*?)```", cleaned, flags=re.DOTALL | re.IGNORECASE)
     if fenced:
@@ -74,7 +77,7 @@ async def _invoke_json_model(
         [
             SystemMessage(
                 content=(
-                    "你只输出合法 JSON，不要输出 Markdown、解释文字或代码块。"
+                    "只输出合法 JSON，不要输出 Markdown、解释文字或代码块。"
                     "如果信息不足，请用空数组或空字符串占位。"
                 )
             ),
@@ -91,9 +94,9 @@ async def _invoke_json_model(
 
 
 async def parse_input_node(state: CardReviewState, config: RunnableConfig) -> CardReviewState:
-    """接收学习资料文本，并检查空输入。"""
-    input_text = _get_last_user_text(state)
-    if not input_text:
+    """Load raw text or a supported document path."""
+    user_input = _get_last_user_text(state)
+    if not user_input:
         return {
             "input_text": "",
             "topic": "未命名资料",
@@ -101,19 +104,53 @@ async def parse_input_node(state: CardReviewState, config: RunnableConfig) -> Ca
             "errors": ["学习资料不能为空。"],
         }
 
-    topic = input_text.splitlines()[0].strip()[:60] or "学习资料"
+    try:
+        input_text, metadata = load_text(user_input)
+    except DocumentLoadError as e:
+        return {
+            "input_text": "",
+            "topic": "资料加载失败",
+            "knowledge_points": [],
+            "errors": [str(e)],
+        }
+
+    topic = str(metadata.get("title") or input_text.splitlines()[0].strip()[:60] or "学习资料")
     return {"input_text": input_text, "topic": topic, "errors": []}
+
+
+async def build_context_node(state: CardReviewState, config: RunnableConfig) -> CardReviewState:
+    """Build RAG context; fall back to plain text if retrieval fails."""
+    if state.get("errors"):
+        return {}
+
+    try:
+        context, chunks = build_rag_context(
+            query=state.get("topic", "学习资料"),
+            text=state["input_text"],
+        )
+    except Exception as e:
+        logger.warning("RAG context generation failed, falling back to plain text: %s", e)
+        return {
+            "rag_context": state["input_text"][:4000],
+            "document_chunks": [],
+        }
+
+    return {
+        "rag_context": context or state["input_text"][:4000],
+        "document_chunks": chunks,
+    }
 
 
 async def extract_knowledge_node(
     state: CardReviewState, config: RunnableConfig
 ) -> CardReviewState:
-    """从学习资料中提取核心知识点。"""
+    """Extract core knowledge points from RAG context."""
     if state.get("errors"):
         return {}
 
+    source_text = state.get("rag_context") or state["input_text"]
     prompt = (
-        KNOWLEDGE_EXTRACTION_PROMPT.format(source_text=state["input_text"])
+        KNOWLEDGE_EXTRACTION_PROMPT.format(source_text=source_text)
         + '\n请输出 JSON：{"knowledge_points":["知识点1","知识点2"]}'
     )
     data = await _invoke_json_model(prompt, config, {"knowledge_points": []})
@@ -121,27 +158,32 @@ async def extract_knowledge_node(
     if not isinstance(points, list):
         points = []
 
-    # 兜底：模型未返回结构化结果时，用输入文本生成一个基础知识点。
     if not points:
-        points = [state["input_text"][:300]]
+        points = [source_text[:300]]
 
     return {"knowledge_points": [str(point) for point in points if str(point).strip()]}
 
 
 async def generate_cards_node(state: CardReviewState, config: RunnableConfig) -> CardReviewState:
-    """根据知识点生成结构化知识卡片。"""
+    """Generate structured cards from knowledge points and RAG context."""
     if state.get("errors"):
         return {}
 
+    source_text = state.get("rag_context") or state["input_text"]
     prompt = (
         CARD_GENERATION_PROMPT.format(
             knowledge_points=json.dumps(
-                state.get("knowledge_points", []), ensure_ascii=False, indent=2
+                {
+                    "knowledge_points": state.get("knowledge_points", []),
+                    "rag_context": source_text,
+                },
+                ensure_ascii=False,
+                indent=2,
             )
         )
         + """
 请输出 JSON，格式为：
-{"cards":[{"document_id":"doc-1","title":"","summary":"","keywords":[],"explanation":"","example":"","common_mistakes":[],"related_concepts":[],"source_text":""}]}
+{"cards":[{"document_id":"default-document","title":"","summary":"","keywords":[],"explanation":"","example":"","common_mistakes":[],"related_concepts":[],"source_text":""}]}
 """
     )
     data = await _invoke_json_model(prompt, config, {"cards": []})
@@ -150,7 +192,9 @@ async def generate_cards_node(state: CardReviewState, config: RunnableConfig) ->
         if not isinstance(item, dict):
             continue
         try:
-            cards.append(KnowledgeCard(document_id="default-document", **item))
+            item.pop("id", None)
+            item["document_id"] = item.get("document_id") or "default-document"
+            cards.append(KnowledgeCard(**item))
         except Exception as e:
             logger.warning("Failed to parse knowledge card: %s", e)
 
@@ -161,8 +205,8 @@ async def generate_cards_node(state: CardReviewState, config: RunnableConfig) ->
                 title=state.get("topic", "学习资料"),
                 summary="; ".join(state.get("knowledge_points", []))[:300],
                 keywords=[],
-                explanation=state.get("input_text", "")[:800],
-                source_text=state.get("input_text", "")[:800],
+                explanation=source_text[:800],
+                source_text=source_text[:800],
             )
         ]
 
@@ -170,14 +214,21 @@ async def generate_cards_node(state: CardReviewState, config: RunnableConfig) ->
 
 
 async def generate_quiz_node(state: CardReviewState, config: RunnableConfig) -> CardReviewState:
-    """根据知识卡片生成练习题。"""
+    """Generate quiz questions from cards and RAG context."""
     if state.get("errors"):
         return {}
 
     cards = state["cards"]
     prompt = (
         QUIZ_GENERATION_PROMPT.format(
-            cards=cards.model_dump_json(indent=2, exclude_none=True)
+            cards=json.dumps(
+                {
+                    "cards": cards.model_dump(mode="json"),
+                    "rag_context": state.get("rag_context", ""),
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
         )
         + """
 请输出 JSON，格式为：
@@ -213,7 +264,7 @@ async def generate_quiz_node(state: CardReviewState, config: RunnableConfig) -> 
 async def generate_review_plan_node(
     state: CardReviewState, config: RunnableConfig
 ) -> CardReviewState:
-    """根据知识点生成初始复习计划。"""
+    """Generate an initial review plan from knowledge points."""
     if state.get("errors"):
         return {}
 
@@ -255,7 +306,7 @@ async def generate_review_plan_node(
 
 
 async def format_result_node(state: CardReviewState, config: RunnableConfig) -> CardReviewState:
-    """整理知识卡片、题目和复习计划，输出适合前端展示的 Markdown。"""
+    """Format cards, questions, and review tasks for the frontend."""
     if state.get("errors"):
         return {"messages": [AIMessage(content="\n".join(state["errors"]))]}
 
@@ -289,6 +340,8 @@ async def format_result_node(state: CardReviewState, config: RunnableConfig) -> 
     content = "\n\n".join(
         [
             f"# 知识卡片与复习计划：{state.get('topic', '学习资料')}",
+            "## RAG 上下文",
+            f"已切分 {len(state.get('document_chunks', []))} 个文本块，并使用关键词检索构建上下文。",
             "## 核心知识点",
             "\n".join(f"- {point}" for point in state.get("knowledge_points", [])),
             "## 知识卡片",
@@ -304,6 +357,7 @@ async def format_result_node(state: CardReviewState, config: RunnableConfig) -> 
 
 agent = StateGraph(CardReviewState)
 agent.add_node("parse_input_node", parse_input_node)
+agent.add_node("build_context_node", build_context_node)
 agent.add_node("extract_knowledge_node", extract_knowledge_node)
 agent.add_node("generate_cards_node", generate_cards_node)
 agent.add_node("generate_quiz_node", generate_quiz_node)
@@ -311,7 +365,8 @@ agent.add_node("generate_review_plan_node", generate_review_plan_node)
 agent.add_node("format_result_node", format_result_node)
 
 agent.set_entry_point("parse_input_node")
-agent.add_edge("parse_input_node", "extract_knowledge_node")
+agent.add_edge("parse_input_node", "build_context_node")
+agent.add_edge("build_context_node", "extract_knowledge_node")
 agent.add_edge("extract_knowledge_node", "generate_cards_node")
 agent.add_edge("generate_cards_node", "generate_quiz_node")
 agent.add_edge("generate_quiz_node", "generate_review_plan_node")
