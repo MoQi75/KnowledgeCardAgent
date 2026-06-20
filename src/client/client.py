@@ -360,3 +360,85 @@ class AgentClient:
             raise AgentClientError(f"Error: {e}")
 
         return ChatHistory.model_validate(response.json())
+
+    def _request_json(
+        self,
+        method: str,
+        path: str,
+        json_body: dict[str, Any] | None = None,
+        params: dict[str, Any] | None = None,
+    ) -> Any:
+        """Call a JSON endpoint and return the decoded response."""
+        try:
+            response = httpx.request(
+                method,
+                f"{self.base_url}{path}",
+                json=json_body,
+                params=params,
+                headers=self._headers,
+                timeout=self.timeout,
+            )
+            response.raise_for_status()
+        except httpx.HTTPStatusError as e:
+            detail = e.response.text
+            raise AgentClientError(f"Error {e.response.status_code}: {detail}") from e
+        except httpx.HTTPError as e:
+            raise AgentClientError(f"Error: {e}") from e
+        return response.json()
+
+    def create_card_document(
+        self, title: str | None, content: str, file_path: str | None = None
+    ) -> dict[str, Any]:
+        return self._request_json(
+            "POST",
+            "/card-system/documents",
+            {"title": title, "content": content, "file_path": file_path},
+        )
+
+    def list_card_documents(self) -> list[dict[str, Any]]:
+        return self._request_json("GET", "/card-system/documents")
+
+    def generate_cards(
+        self,
+        document_id: str | None = None,
+        text: str | None = None,
+        title: str | None = None,
+    ) -> dict[str, Any]:
+        return self._request_json(
+            "POST",
+            "/card-system/cards/generate",
+            {"document_id": document_id, "text": text, "title": title},
+        )
+
+    def list_cards(self, document_id: str | None = None) -> list[dict[str, Any]]:
+        params = {"document_id": document_id} if document_id else None
+        return self._request_json("GET", "/card-system/cards", params=params)
+
+    def generate_quiz(self, card_id: str | None = None) -> dict[str, Any]:
+        return self._request_json("POST", "/card-system/quiz/generate", {"card_id": card_id})
+
+    def list_quiz(self, card_id: str | None = None) -> list[dict[str, Any]]:
+        params = {"card_id": card_id} if card_id else None
+        return self._request_json("GET", "/card-system/quiz", params=params)
+
+    def submit_quiz_answer(self, question_id: str, user_answer: str) -> dict[str, Any]:
+        return self._request_json(
+            "POST",
+            "/card-system/quiz/submit",
+            {"question_id": question_id, "user_answer": user_answer},
+        )
+
+    def list_wrong_questions(self) -> list[dict[str, Any]]:
+        return self._request_json("GET", "/card-system/wrong-questions")
+
+    def generate_review_plan(
+        self, weak_points: list[str] | None = None, title: str | None = None
+    ) -> dict[str, Any]:
+        return self._request_json(
+            "POST",
+            "/card-system/review-plan/generate",
+            {"weak_points": weak_points, "title": title},
+        )
+
+    def get_study_summary(self) -> dict[str, Any]:
+        return self._request_json("GET", "/card-system/study-summary")

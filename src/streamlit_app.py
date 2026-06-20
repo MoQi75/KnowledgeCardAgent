@@ -3,6 +3,7 @@ import os
 import urllib.parse
 import uuid
 from collections.abc import AsyncGenerator
+from typing import Any
 
 import streamlit as st
 from dotenv import load_dotenv
@@ -123,6 +124,12 @@ async def main() -> None:
         "Full toolkit for running an AI agent service built with LangGraph, FastAPI and Streamlit"
         ""
 
+        page = st.radio(
+            "页面",
+            options=["知识卡片系统", "聊天助手"],
+            index=0,
+        )
+
         if st.button(":material/chat: New Chat", use_container_width=True):
             st.session_state.messages = []
             st.session_state.thread_id = str(uuid.uuid4())
@@ -200,6 +207,10 @@ async def main() -> None:
         st.caption(
             "Made with :material/favorite: by [Joshua](https://www.linkedin.com/in/joshua-k-carroll/) in Oakland"
         )
+
+    if page == "知识卡片系统":
+        render_card_system_page(agent_client)
+        return
 
     # Draw existing messages
     messages: list[ChatMessage] = st.session_state.messages
@@ -488,6 +499,272 @@ async def handle_feedback() -> None:
             st.stop()
         st.session_state.last_feedback = (latest_run_id, feedback)
         st.toast("Feedback recorded", icon=":material/reviews:")
+
+
+def render_card_system_page(agent_client: AgentClient) -> None:
+    """Render the knowledge card workflow UI."""
+    st.title("知识卡片生成与复习规划智能体系统")
+    _init_card_system_state()
+
+    tabs = st.tabs(["资料输入", "知识卡片", "自测练习", "错题本", "复习计划", "学习统计"])
+    with tabs[0]:
+        _render_document_tab(agent_client)
+    with tabs[1]:
+        _render_cards_tab(agent_client)
+    with tabs[2]:
+        _render_quiz_tab(agent_client)
+    with tabs[3]:
+        _render_wrong_questions_tab(agent_client)
+    with tabs[4]:
+        _render_review_plan_tab(agent_client)
+    with tabs[5]:
+        _render_study_summary_tab(agent_client)
+
+
+def _init_card_system_state() -> None:
+    defaults = {
+        "card_documents": [],
+        "card_cards": [],
+        "card_quiz": [],
+        "card_wrong_questions": [],
+        "card_review_plan": None,
+        "card_selected_document_id": None,
+    }
+    for key, value in defaults.items():
+        if key not in st.session_state:
+            st.session_state[key] = value
+
+
+def _friendly_call(label: str, func, *args, **kwargs):
+    try:
+        return func(*args, **kwargs)
+    except AgentClientError as e:
+        st.error(f"{label}失败：{e}")
+    except Exception as e:
+        st.error(f"{label}失败：{e}")
+    return None
+
+
+def _refresh_documents(agent_client: AgentClient) -> None:
+    documents = _friendly_call("获取资料列表", agent_client.list_card_documents)
+    if documents is not None:
+        st.session_state.card_documents = documents
+
+
+def _refresh_cards(agent_client: AgentClient, document_id: str | None = None) -> None:
+    cards = _friendly_call("获取知识卡片", agent_client.list_cards, document_id)
+    if cards is not None:
+        st.session_state.card_cards = cards
+
+
+def _refresh_quiz(agent_client: AgentClient) -> None:
+    questions = _friendly_call("获取题目", agent_client.list_quiz)
+    if questions is not None:
+        st.session_state.card_quiz = questions
+
+
+def _render_document_tab(agent_client: AgentClient) -> None:
+    st.subheader("资料输入")
+    title = st.text_input("资料标题", key="card_doc_title")
+    content = st.text_area("粘贴学习资料文本", height=260, key="card_doc_content")
+
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        if st.button("创建资料", use_container_width=True):
+            if not content.strip():
+                st.warning("请先输入学习资料文本。")
+            else:
+                document = _friendly_call(
+                    "创建资料",
+                    agent_client.create_card_document,
+                    title or None,
+                    content,
+                )
+                if document:
+                    st.session_state.card_selected_document_id = str(document["id"])
+                    _refresh_documents(agent_client)
+                    st.success("资料已创建。")
+
+    with col2:
+        if st.button("刷新资料列表", use_container_width=True):
+            _refresh_documents(agent_client)
+
+    with col3:
+        if st.button("生成知识卡片", use_container_width=True):
+            selected_id = st.session_state.card_selected_document_id
+            result = None
+            if selected_id:
+                result = _friendly_call("生成知识卡片", agent_client.generate_cards, selected_id)
+            elif content.strip():
+                result = _friendly_call(
+                    "生成知识卡片",
+                    agent_client.generate_cards,
+                    None,
+                    content,
+                    title or None,
+                )
+                if result:
+                    st.session_state.card_selected_document_id = str(result["document"]["id"])
+            else:
+                st.warning("请选择已有资料或输入学习资料文本。")
+            if result:
+                st.session_state.card_cards = result["cards"]["cards"]
+                _refresh_documents(agent_client)
+                st.success("知识卡片已生成。")
+
+    if st.button("载入资料列表", use_container_width=True):
+        _refresh_documents(agent_client)
+
+    documents = st.session_state.card_documents
+    if documents:
+        options = {f"{doc['title']} ({doc['id']})": str(doc["id"]) for doc in documents}
+        current = st.selectbox("选择已有资料", options=list(options.keys()))
+        st.session_state.card_selected_document_id = options[current]
+        selected = next(
+            doc for doc in documents if str(doc["id"]) == st.session_state.card_selected_document_id
+        )
+        st.caption(f"创建时间：{selected.get('created_at', '')}")
+        st.text_area("资料预览", value=selected.get("content", "")[:2000], height=180, disabled=True)
+
+
+def _render_cards_tab(agent_client: AgentClient) -> None:
+    st.subheader("知识卡片")
+    if st.button("刷新知识卡片", use_container_width=True):
+        _refresh_cards(agent_client, st.session_state.card_selected_document_id)
+
+    cards = st.session_state.card_cards
+    if not cards:
+        st.info("暂无知识卡片，请先在“资料输入”中生成。")
+        return
+
+    for index, card in enumerate(cards, 1):
+        with st.expander(f"{index}. {card.get('title', '未命名卡片')}", expanded=index == 1):
+            st.markdown(f"**摘要：** {card.get('summary', '')}")
+            st.markdown(f"**关键词：** {_join_list(card.get('keywords'))}")
+            st.markdown(f"**详细解释：** {card.get('explanation', '')}")
+            st.markdown(f"**示例：** {card.get('example') or '暂无'}")
+            st.markdown(f"**易错点：** {_join_list(card.get('common_mistakes'))}")
+            st.markdown(f"**关联知识点：** {_join_list(card.get('related_concepts'))}")
+
+
+def _render_quiz_tab(agent_client: AgentClient) -> None:
+    st.subheader("自测练习")
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("根据知识卡片生成题目", use_container_width=True):
+            result = _friendly_call("生成题目", agent_client.generate_quiz)
+            if result:
+                st.session_state.card_quiz = result["questions"]["questions"]
+                st.success("题目已生成。")
+    with col2:
+        if st.button("刷新题目列表", use_container_width=True):
+            _refresh_quiz(agent_client)
+
+    questions = st.session_state.card_quiz
+    if not questions:
+        st.info("暂无题目，请先生成自测题。")
+        return
+
+    for index, question in enumerate(questions, 1):
+        qid = str(question["id"])
+        with st.expander(f"{index}. {question.get('question', '')}", expanded=index == 1):
+            st.caption(f"题型：{question.get('question_type', '')} | 难度：{question.get('difficulty', '')}")
+            options = question.get("options") or []
+            if options:
+                answer = st.radio("选择答案", options=options, key=f"answer_{qid}")
+            else:
+                answer = st.text_area("输入答案", key=f"answer_{qid}", height=100)
+
+            if st.button("提交答案", key=f"submit_{qid}"):
+                if not str(answer).strip():
+                    st.warning("请先填写答案。")
+                    continue
+                result = _friendly_call("提交答案", agent_client.submit_quiz_answer, qid, str(answer))
+                if result:
+                    check = result["result"]
+                    st.success("回答正确。" if check["is_correct"] else "回答不正确。")
+                    st.markdown(f"**正确答案：** {check['correct_answer']}")
+                    st.markdown(f"**解析：** {check['explanation']}")
+                    st.markdown(f"**反馈：** {check['feedback']}")
+
+
+def _render_wrong_questions_tab(agent_client: AgentClient) -> None:
+    st.subheader("错题本")
+    if st.button("刷新错题本", use_container_width=True):
+        wrong_questions = _friendly_call("获取错题本", agent_client.list_wrong_questions)
+        if wrong_questions is not None:
+            st.session_state.card_wrong_questions = wrong_questions
+
+    wrong_questions = st.session_state.card_wrong_questions
+    if not wrong_questions:
+        st.info("暂无错题。提交错误答案后会出现在这里。")
+        return
+
+    for item in wrong_questions:
+        with st.expander(item.get("question", "错题")):
+            st.markdown(f"**关联知识点：** {item.get('related_knowledge') or '暂无'}")
+            st.markdown(f"**错误次数：** {item.get('error_count', 0)}")
+            st.markdown(f"**正确答案：** {item.get('answer', '')}")
+            st.markdown(f"**解析：** {item.get('explanation', '')}")
+
+
+def _render_review_plan_tab(agent_client: AgentClient) -> None:
+    st.subheader("复习计划")
+    plan_days = st.radio("计划长度", options=[3, 7], horizontal=True)
+    weak_points_text = st.text_area("薄弱点（可选，每行一个；留空则根据错题本生成）", height=120)
+
+    if st.button("生成复习计划", use_container_width=True):
+        weak_points = [line.strip() for line in weak_points_text.splitlines() if line.strip()]
+        result = _friendly_call(
+            "生成复习计划",
+            agent_client.generate_review_plan,
+            weak_points or None,
+            f"{plan_days} 天复习计划",
+        )
+        if result:
+            plan = result["plan"]
+            plan["tasks"] = plan.get("tasks", [])[:plan_days]
+            st.session_state.card_review_plan = plan
+            st.success("复习计划已生成。")
+
+    plan = st.session_state.card_review_plan
+    if not plan:
+        st.info("暂无复习计划。")
+        return
+
+    st.markdown(f"**薄弱点：** {_join_list(plan.get('weak_points'))}")
+    for task in plan.get("tasks", []):
+        st.markdown(f"### Day {task.get('day')}: {task.get('topic')}")
+        st.markdown(f"- 任务：{task.get('task')}")
+        st.markdown(f"- 原因：{task.get('reason')}")
+        st.checkbox("完成状态", value=bool(task.get("is_completed")), disabled=True)
+
+
+def _render_study_summary_tab(agent_client: AgentClient) -> None:
+    st.subheader("学习统计")
+    summary = None
+    if st.button("刷新学习统计", use_container_width=True):
+        summary = _friendly_call("获取学习统计", agent_client.get_study_summary)
+
+    if not summary:
+        st.info("点击刷新学习统计查看当前数据。")
+        return
+
+    cols = st.columns(6)
+    cols[0].metric("资料数量", summary.get("document_count", 0))
+    cols[1].metric("知识卡片数量", summary.get("card_count", 0))
+    cols[2].metric("题目数量", summary.get("quiz_count", 0))
+    cols[3].metric("答题数量", summary.get("answer_count", 0))
+    cols[4].metric("错题数量", summary.get("wrong_count", 0))
+    cols[5].metric("正确率", f"{summary.get('accuracy', 0) * 100:.1f}%")
+
+
+def _join_list(value: Any) -> str:
+    if isinstance(value, list):
+        return "、".join(str(item) for item in value) or "暂无"
+    if value:
+        return str(value)
+    return "暂无"
 
 
 async def handle_sub_agent_msgs(messages_agen, status, is_new):
