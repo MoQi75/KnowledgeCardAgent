@@ -1,5 +1,16 @@
 from schema.models import AllModelEnum
 from schema.card import KnowledgeCard, KnowledgeCardList
+from schema.card_system import (
+    CreateDocumentRequest,
+    GenerateCardsRequest,
+    GenerateCardsResponse,
+    GenerateQuizRequest,
+    GenerateQuizResponse,
+    GenerateReviewPlanRequest,
+    GenerateReviewPlanResponse,
+    StudySummaryResponse,
+    SubmitAnswerResponse,
+)
 from schema.quiz import (
     AnswerCheckResult,
     AnswerSubmission,
@@ -24,6 +35,15 @@ __all__ = [
     "AllModelEnum",
     "KnowledgeCard",
     "KnowledgeCardList",
+    "CreateDocumentRequest",
+    "GenerateCardsRequest",
+    "GenerateCardsResponse",
+    "GenerateQuizRequest",
+    "GenerateQuizResponse",
+    "SubmitAnswerResponse",
+    "GenerateReviewPlanRequest",
+    "GenerateReviewPlanResponse",
+    "StudySummaryResponse",
     "QuizQuestion",
     "QuizQuestionList",
     "AnswerSubmission",

@@ -23,18 +23,48 @@ from langsmith import Client as LangsmithClient
 from langsmith import uuid7
 
 from agents import DEFAULT_AGENT, AgentGraph, get_agent, get_all_agent_info, load_agent
+from card_system.answer_checker import check_answer
+from card_system.review_planner import generate_review_plan
+from card_system.storage import (
+    CardSystemStorageError,
+    create_document,
+    get_document,
+    get_study_summary,
+    init_card_system_db,
+    list_documents,
+    list_knowledge_cards,
+    list_quiz_questions,
+    list_wrong_questions,
+    save_answer_record,
+    save_knowledge_cards,
+    save_quiz_questions,
+    save_review_plan,
+)
 from core import settings
 from memory import initialize_database, initialize_store
 from schema import (
     ChatHistory,
     ChatHistoryInput,
     ChatMessage,
+    CreateDocumentRequest,
     Feedback,
     FeedbackResponse,
+    GenerateCardsRequest,
+    GenerateCardsResponse,
+    GenerateQuizRequest,
+    GenerateQuizResponse,
+    GenerateReviewPlanRequest,
+    GenerateReviewPlanResponse,
+    KnowledgeCard,
+    KnowledgeCardList,
+    QuizQuestion,
+    QuizQuestionList,
     ServiceMetadata,
     StreamInput,
+    SubmitAnswerResponse,
     UserInput,
 )
+from schema.quiz import AnswerSubmission
 from service.utils import (
     convert_message_content_to_string,
     langchain_to_chat_message,
@@ -104,6 +134,73 @@ app = FastAPI(lifespan=lifespan, generate_unique_id_function=custom_generate_uni
 router = APIRouter(dependencies=[Depends(verify_bearer)])
 
 
+def _storage_exception(e: CardSystemStorageError) -> HTTPException:
+    return HTTPException(status_code=503, detail=str(e))
+
+
+async def _ensure_card_system_db() -> None:
+    try:
+        await init_card_system_db()
+    except CardSystemStorageError as e:
+        raise _storage_exception(e) from e
+
+
+def _row_to_card(row: dict[str, Any]) -> KnowledgeCard:
+    data = dict(row)
+    data["id"] = str(data["id"])
+    data["document_id"] = str(data["document_id"])
+    return KnowledgeCard(**data)
+
+
+def _row_to_question(row: dict[str, Any]) -> QuizQuestion:
+    data = dict(row)
+    data["id"] = str(data["id"])
+    data["card_id"] = str(data["card_id"])
+    return QuizQuestion(**data)
+
+
+async def _run_card_review_agent(text: str) -> dict[str, Any]:
+    try:
+        agent = get_agent("card_review_agent")
+        config = RunnableConfig(
+            configurable={"thread_id": str(uuid4()), "user_id": "card-system-api"}
+        )
+        state = await agent.ainvoke({"messages": [HumanMessage(content=text)]}, config=config)
+    except Exception as e:
+        logger.error("Card review agent failed: %s", e)
+        raise HTTPException(status_code=502, detail="Card review agent failed") from e
+
+    if state.get("errors"):
+        raise HTTPException(status_code=422, detail="; ".join(state["errors"]))
+    return state
+
+
+async def _get_question_or_404(question_id: str) -> QuizQuestion:
+    try:
+        rows = await list_quiz_questions()
+    except CardSystemStorageError as e:
+        raise _storage_exception(e) from e
+    for row in rows:
+        if str(row["id"]) == question_id:
+            return _row_to_question(row)
+    raise HTTPException(status_code=404, detail="question_id not found")
+
+
+async def _get_cards_or_404(card_id: str | None = None) -> list[KnowledgeCard]:
+    try:
+        rows = await list_knowledge_cards()
+    except CardSystemStorageError as e:
+        raise _storage_exception(e) from e
+    cards = [_row_to_card(row) for row in rows]
+    if card_id:
+        cards = [card for card in cards if card.id == card_id]
+        if not cards:
+            raise HTTPException(status_code=404, detail="card_id not found")
+    if not cards:
+        raise HTTPException(status_code=404, detail="No knowledge cards found")
+    return cards
+
+
 @router.get("/info")
 async def info() -> ServiceMetadata:
     models = list(settings.AVAILABLE_MODELS)
@@ -114,6 +211,232 @@ async def info() -> ServiceMetadata:
         default_agent=DEFAULT_AGENT,
         default_model=settings.DEFAULT_MODEL,
     )
+
+
+@router.post(
+    "/card-system/documents",
+    summary="Create a learning document",
+)
+async def create_card_system_document(input: CreateDocumentRequest) -> dict[str, Any]:
+    """Create a learning document from text content."""
+    if not input.content.strip():
+        raise HTTPException(status_code=422, detail="content cannot be empty")
+    await _ensure_card_system_db()
+    try:
+        return await create_document(
+            title=input.title or input.content.splitlines()[0][:80] or "学习资料",
+            content=input.content,
+            file_path=input.file_path,
+        )
+    except CardSystemStorageError as e:
+        raise _storage_exception(e) from e
+
+
+@router.get(
+    "/card-system/documents",
+    summary="List learning documents",
+)
+async def list_card_system_documents() -> list[dict[str, Any]]:
+    """List learning documents."""
+    await _ensure_card_system_db()
+    try:
+        return await list_documents()
+    except CardSystemStorageError as e:
+        raise _storage_exception(e) from e
+
+
+@router.post(
+    "/card-system/cards/generate",
+    response_model=GenerateCardsResponse,
+    summary="Generate knowledge cards",
+)
+async def generate_card_system_cards(input: GenerateCardsRequest) -> GenerateCardsResponse:
+    """Generate knowledge cards from an existing document or direct text."""
+    await _ensure_card_system_db()
+
+    if input.document_id:
+        try:
+            document = await get_document(input.document_id)
+        except CardSystemStorageError as e:
+            raise _storage_exception(e) from e
+        if not document:
+            raise HTTPException(status_code=404, detail="document_id not found")
+        content = str(document["content"])
+    elif input.text and input.text.strip():
+        try:
+            document = await create_document(
+                title=input.title or input.text.splitlines()[0][:80] or "学习资料",
+                content=input.text,
+            )
+        except CardSystemStorageError as e:
+            raise _storage_exception(e) from e
+        content = input.text
+    else:
+        raise HTTPException(status_code=422, detail="document_id or non-empty text is required")
+
+    state = await _run_card_review_agent(content)
+    cards = state.get("cards")
+    if not isinstance(cards, KnowledgeCardList):
+        raise HTTPException(status_code=502, detail="Card review agent did not return cards")
+
+    document_id = str(document["id"])
+    for card in cards.cards:
+        card.document_id = document_id
+
+    try:
+        await save_knowledge_cards(document_id, cards)
+    except CardSystemStorageError as e:
+        raise _storage_exception(e) from e
+
+    return GenerateCardsResponse(document=document, cards=cards)
+
+
+@router.get(
+    "/card-system/cards",
+    summary="List knowledge cards",
+)
+async def list_card_system_cards(document_id: str | None = None) -> list[dict[str, Any]]:
+    """List knowledge cards, optionally filtered by document ID."""
+    await _ensure_card_system_db()
+    if document_id:
+        try:
+            document = await get_document(document_id)
+        except CardSystemStorageError as e:
+            raise _storage_exception(e) from e
+        if not document:
+            raise HTTPException(status_code=404, detail="document_id not found")
+    try:
+        return await list_knowledge_cards(document_id=document_id)
+    except CardSystemStorageError as e:
+        raise _storage_exception(e) from e
+
+
+@router.post(
+    "/card-system/quiz/generate",
+    response_model=GenerateQuizResponse,
+    summary="Generate quiz questions",
+)
+async def generate_card_system_quiz(input: GenerateQuizRequest) -> GenerateQuizResponse:
+    """Generate quiz questions from stored knowledge cards."""
+    await _ensure_card_system_db()
+    cards = await _get_cards_or_404(input.card_id)
+    questions = QuizQuestionList(
+        questions=[
+            QuizQuestion(
+                card_id=card.id,
+                question_type="short_answer",
+                question=f"请简要说明：{card.title}",
+                options=[],
+                answer=card.summary,
+                explanation=card.explanation,
+                difficulty="medium",
+                related_card_title=card.title,
+            )
+            for card in cards
+        ]
+    )
+    try:
+        await save_quiz_questions(questions)
+    except CardSystemStorageError as e:
+        raise _storage_exception(e) from e
+    return GenerateQuizResponse(questions=questions)
+
+
+@router.get(
+    "/card-system/quiz",
+    summary="List quiz questions",
+)
+async def list_card_system_quiz(card_id: str | None = None) -> list[dict[str, Any]]:
+    """List quiz questions, optionally filtered by card ID."""
+    await _ensure_card_system_db()
+    if card_id:
+        await _get_cards_or_404(card_id)
+    try:
+        return await list_quiz_questions(card_id=card_id)
+    except CardSystemStorageError as e:
+        raise _storage_exception(e) from e
+
+
+@router.post(
+    "/card-system/quiz/submit",
+    response_model=SubmitAnswerResponse,
+    summary="Submit and check an answer",
+)
+async def submit_card_system_answer(input: AnswerSubmission) -> SubmitAnswerResponse:
+    """Submit an answer and automatically check it."""
+    if not input.user_answer.strip():
+        raise HTTPException(status_code=422, detail="user_answer cannot be empty")
+    await _ensure_card_system_db()
+    question = await _get_question_or_404(input.question_id)
+    try:
+        result = await check_answer(question, input)
+        record = await save_answer_record(input, result)
+    except CardSystemStorageError as e:
+        raise _storage_exception(e) from e
+    except Exception as e:
+        logger.error("Answer checking failed: %s", e)
+        raise HTTPException(status_code=502, detail="Answer checking failed") from e
+    return SubmitAnswerResponse(result=result, record=record)
+
+
+@router.get(
+    "/card-system/wrong-questions",
+    summary="List wrong questions",
+)
+async def list_card_system_wrong_questions() -> list[dict[str, Any]]:
+    """List wrong questions for the default user."""
+    await _ensure_card_system_db()
+    try:
+        return await list_wrong_questions()
+    except CardSystemStorageError as e:
+        raise _storage_exception(e) from e
+
+
+@router.post(
+    "/card-system/review-plan/generate",
+    response_model=GenerateReviewPlanResponse,
+    summary="Generate a review plan",
+)
+async def generate_card_system_review_plan(
+    input: GenerateReviewPlanRequest,
+) -> GenerateReviewPlanResponse:
+    """Generate and save a review plan from weak points or wrong questions."""
+    await _ensure_card_system_db()
+    weak_points = input.weak_points
+    if weak_points is None:
+        try:
+            wrong_questions = await list_wrong_questions()
+        except CardSystemStorageError as e:
+            raise _storage_exception(e) from e
+        weak_points = [
+            str(item.get("related_knowledge") or item.get("question") or "")
+            for item in wrong_questions
+        ]
+
+    try:
+        plan = await generate_review_plan(weak_points or [])
+        record = await save_review_plan(plan, title=input.title or "知识卡片复习计划")
+    except CardSystemStorageError as e:
+        raise _storage_exception(e) from e
+    except Exception as e:
+        logger.error("Review plan generation failed: %s", e)
+        raise HTTPException(status_code=502, detail="Review plan generation failed") from e
+
+    return GenerateReviewPlanResponse(plan=plan, record=record)
+
+
+@router.get(
+    "/card-system/study-summary",
+    summary="Get study summary",
+)
+async def get_card_system_study_summary() -> dict[str, Any]:
+    """Get aggregate study statistics."""
+    await _ensure_card_system_db()
+    try:
+        summary = await get_study_summary()
+    except CardSystemStorageError as e:
+        raise _storage_exception(e) from e
+    return summary.model_dump()
 
 
 async def _handle_input(user_input: UserInput, agent: AgentGraph) -> tuple[dict[str, Any], UUID]:
