@@ -1,4 +1,12 @@
 from schema.models import AllModelEnum
+from schema.card import KnowledgeCard, KnowledgeCardList
+from schema.quiz import (
+    AnswerCheckResult,
+    AnswerSubmission,
+    QuizQuestion,
+    QuizQuestionList,
+)
+from schema.review import ReviewPlan, ReviewTask, StudySummary
 from schema.schema import (
     AgentInfo,
     ChatHistory,
@@ -14,6 +22,15 @@ from schema.schema import (
 __all__ = [
     "AgentInfo",
     "AllModelEnum",
+    "KnowledgeCard",
+    "KnowledgeCardList",
+    "QuizQuestion",
+    "QuizQuestionList",
+    "AnswerSubmission",
+    "AnswerCheckResult",
+    "ReviewTask",
+    "ReviewPlan",
+    "StudySummary",
     "UserInput",
     "ChatMessage",
     "ServiceMetadata",
