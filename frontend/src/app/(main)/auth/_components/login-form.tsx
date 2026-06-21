@@ -57,7 +57,7 @@ export function LoginForm() {
   return (
     <form noValidate onSubmit={form.handleSubmit(onSubmit)} className="flex flex-col gap-5">
       <Button
-        className="h-11 w-full rounded-2xl border-[#d8c8f7] bg-[#f7f2ff] text-[#6d51b8] shadow-sm hover:-translate-y-0.5 hover:bg-[#efe6ff] hover:shadow-md"
+        className="h-11 w-full rounded-2xl border-[#e2d6fb] bg-[#f7f2ff] text-[#6d51b8] shadow-sm transition hover:-translate-y-0.5 hover:bg-[#efe6ff] hover:shadow-md"
         type="button"
         variant="outline"
         onClick={fillDemoAccount}
@@ -82,7 +82,7 @@ export function LoginForm() {
                 placeholder="请输入账号邮箱"
                 autoComplete="email"
                 aria-invalid={fieldState.invalid}
-                className="h-12 rounded-2xl border-[#e4dff5] bg-[#fbf9ff] px-4 text-[#12121c] shadow-inner transition placeholder:text-[#aaa1bb] focus-visible:border-[#ae99f1] focus-visible:ring-[#c5aef1]/45"
+                className="h-12 rounded-2xl border-[#e7dffd] bg-[#fcfaff] px-4 text-[#151426] shadow-inner transition placeholder:text-[#aaa1bb] focus-visible:border-[#ae99f1] focus-visible:ring-[#c5aef1]/45"
               />
               {fieldState.invalid && <FieldError errors={[fieldState.error]} className="text-[#c91944]" />}
             </Field>
@@ -103,7 +103,7 @@ export function LoginForm() {
                 placeholder="请输入密码"
                 autoComplete="current-password"
                 aria-invalid={fieldState.invalid}
-                className="h-12 rounded-2xl border-[#e4dff5] bg-[#fbf9ff] px-4 text-[#12121c] shadow-inner transition placeholder:text-[#aaa1bb] focus-visible:border-[#ae99f1] focus-visible:ring-[#c5aef1]/45"
+                className="h-12 rounded-2xl border-[#e7dffd] bg-[#fcfaff] px-4 text-[#151426] shadow-inner transition placeholder:text-[#aaa1bb] focus-visible:border-[#ae99f1] focus-visible:ring-[#c5aef1]/45"
               />
               {fieldState.invalid && <FieldError errors={[fieldState.error]} className="text-[#c91944]" />}
             </Field>
@@ -120,7 +120,7 @@ export function LoginForm() {
                 checked={field.value}
                 onCheckedChange={(checked) => field.onChange(Boolean(checked))}
                 aria-invalid={fieldState.invalid}
-                className="border-[#c5aef1] data-[state=checked]:border-[#9d0633] data-[state=checked]:bg-[#9d0633] data-[state=checked]:text-white"
+                className="border-[#c5aef1] data-[state=checked]:border-[#b70f46] data-[state=checked]:bg-[#b70f46] data-[state=checked]:text-white"
               />
               <FieldContent>
                 <FieldLabel htmlFor="login-remember" className="font-normal text-[#6f6680]">
@@ -133,7 +133,7 @@ export function LoginForm() {
         />
       </FieldGroup>
       <Button
-        className="h-12 w-full rounded-2xl bg-gradient-to-r from-[#9d0633] to-[#c91944] font-semibold text-white shadow-[0_16px_28px_rgba(157,6,51,0.24)] transition hover:-translate-y-0.5 hover:shadow-[0_20px_38px_rgba(157,6,51,0.34)]"
+        className="h-12 w-full rounded-2xl bg-gradient-to-r from-[#b70f46] to-[#d9366f] font-semibold text-white shadow-[0_15px_28px_rgba(183,15,70,0.22)] transition hover:-translate-y-0.5 hover:shadow-[0_20px_36px_rgba(183,15,70,0.32)]"
         type="submit"
       >
         进入系统
