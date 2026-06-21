@@ -289,6 +289,72 @@ html {
   animation: login-card-enter 0.72s ease-out both;
 }
 
+@keyframes login-panel-enter {
+  from {
+    opacity: 0;
+    transform: translateX(-24px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes login-illustration-enter {
+  from {
+    opacity: 0;
+    transform: translateX(34px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes login-soft-orb-drift {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  50% {
+    transform: translate3d(18px, -14px, 0) scale(1.06);
+  }
+}
+
+@keyframes login-illustration-float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-10px);
+  }
+}
+
+.login-panel-enter {
+  animation: login-panel-enter 0.72s ease-out both;
+}
+
+.login-illustration-enter {
+  animation: login-illustration-enter 0.82s ease-out both;
+}
+
+.login-soft-orb {
+  animation: login-soft-orb-drift 12s ease-in-out infinite;
+}
+
+.login-soft-orb-delayed {
+  animation: login-soft-orb-drift 14s ease-in-out infinite reverse;
+}
+
+.login-illustration-float {
+  animation: login-illustration-float 5.8s ease-in-out infinite;
+}
+
+.login-floating-card {
+  animation: login-illustration-float 4.8s ease-in-out infinite;
+}
+
 @media print {
   @page {
     size: Letter;

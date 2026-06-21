@@ -57,7 +57,7 @@ export function LoginForm() {
   return (
     <form noValidate onSubmit={form.handleSubmit(onSubmit)} className="flex flex-col gap-5">
       <Button
-        className="h-11 w-full border-cyan-300/30 bg-cyan-300/10 text-cyan-50 hover:bg-cyan-300/20"
+        className="h-11 w-full rounded-2xl border-[#d8c8f7] bg-[#f7f2ff] text-[#6d51b8] shadow-sm hover:-translate-y-0.5 hover:bg-[#efe6ff] hover:shadow-md"
         type="button"
         variant="outline"
         onClick={fillDemoAccount}
@@ -72,7 +72,7 @@ export function LoginForm() {
           name="email"
           render={({ field, fieldState }) => (
             <Field className="gap-2" data-invalid={fieldState.invalid}>
-              <FieldLabel htmlFor="login-email" className="text-cyan-50">
+              <FieldLabel htmlFor="login-email" className="font-medium text-[#4f4564]">
                 账号
               </FieldLabel>
               <Input
@@ -82,9 +82,9 @@ export function LoginForm() {
                 placeholder="请输入账号邮箱"
                 autoComplete="email"
                 aria-invalid={fieldState.invalid}
-                className="h-12 border-white/12 bg-white/[0.08] px-4 text-white placeholder:text-slate-400 focus-visible:border-cyan-300 focus-visible:ring-cyan-300/30"
+                className="h-12 rounded-2xl border-[#e4dff5] bg-[#fbf9ff] px-4 text-[#12121c] shadow-inner transition placeholder:text-[#aaa1bb] focus-visible:border-[#ae99f1] focus-visible:ring-[#c5aef1]/45"
               />
-              {fieldState.invalid && <FieldError errors={[fieldState.error]} className="text-rose-200" />}
+              {fieldState.invalid && <FieldError errors={[fieldState.error]} className="text-[#c91944]" />}
             </Field>
           )}
         />
@@ -93,7 +93,7 @@ export function LoginForm() {
           name="password"
           render={({ field, fieldState }) => (
             <Field className="gap-2" data-invalid={fieldState.invalid}>
-              <FieldLabel htmlFor="login-password" className="text-cyan-50">
+              <FieldLabel htmlFor="login-password" className="font-medium text-[#4f4564]">
                 密码
               </FieldLabel>
               <Input
@@ -103,9 +103,9 @@ export function LoginForm() {
                 placeholder="请输入密码"
                 autoComplete="current-password"
                 aria-invalid={fieldState.invalid}
-                className="h-12 border-white/12 bg-white/[0.08] px-4 text-white placeholder:text-slate-400 focus-visible:border-fuchsia-300 focus-visible:ring-fuchsia-300/30"
+                className="h-12 rounded-2xl border-[#e4dff5] bg-[#fbf9ff] px-4 text-[#12121c] shadow-inner transition placeholder:text-[#aaa1bb] focus-visible:border-[#ae99f1] focus-visible:ring-[#c5aef1]/45"
               />
-              {fieldState.invalid && <FieldError errors={[fieldState.error]} className="text-rose-200" />}
+              {fieldState.invalid && <FieldError errors={[fieldState.error]} className="text-[#c91944]" />}
             </Field>
           )}
         />
@@ -120,20 +120,20 @@ export function LoginForm() {
                 checked={field.value}
                 onCheckedChange={(checked) => field.onChange(Boolean(checked))}
                 aria-invalid={fieldState.invalid}
-                className="border-cyan-200/40 data-[state=checked]:border-cyan-300 data-[state=checked]:bg-cyan-300 data-[state=checked]:text-slate-950"
+                className="border-[#c5aef1] data-[state=checked]:border-[#9d0633] data-[state=checked]:bg-[#9d0633] data-[state=checked]:text-white"
               />
               <FieldContent>
-                <FieldLabel htmlFor="login-remember" className="font-normal text-slate-300">
+                <FieldLabel htmlFor="login-remember" className="font-normal text-[#6f6680]">
                   记住我
                 </FieldLabel>
-                {fieldState.invalid && <FieldError errors={[fieldState.error]} className="text-rose-200" />}
+                {fieldState.invalid && <FieldError errors={[fieldState.error]} className="text-[#c91944]" />}
               </FieldContent>
             </Field>
           )}
         />
       </FieldGroup>
       <Button
-        className="h-12 w-full bg-gradient-to-r from-cyan-400 via-blue-500 to-fuchsia-500 font-semibold text-white shadow-[0_0_28px_rgba(59,130,246,0.35)] transition hover:shadow-[0_0_40px_rgba(168,85,247,0.5)]"
+        className="h-12 w-full rounded-2xl bg-gradient-to-r from-[#9d0633] to-[#c91944] font-semibold text-white shadow-[0_16px_28px_rgba(157,6,51,0.24)] transition hover:-translate-y-0.5 hover:shadow-[0_20px_38px_rgba(157,6,51,0.34)]"
         type="submit"
       >
         进入系统
