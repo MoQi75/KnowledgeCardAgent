@@ -1,6 +1,8 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
+import { WandSparkles } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { Controller, useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { z } from "zod";
@@ -10,6 +12,11 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Field, FieldContent, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 
+const demoAccount = {
+  email: "admin@example.com",
+  password: "123456",
+};
+
 const formSchema = z.object({
   email: z.string().email({ message: "请输入有效的账号邮箱。" }),
   password: z.string().min(6, { message: "密码至少需要 6 个字符。" }),
@@ -17,6 +24,7 @@ const formSchema = z.object({
 });
 
 export function LoginForm() {
+  const router = useRouter();
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
     defaultValues: {
@@ -26,18 +34,38 @@ export function LoginForm() {
     },
   });
 
+  const fillDemoAccount = () => {
+    form.setValue("email", demoAccount.email, { shouldDirty: true, shouldValidate: true });
+    form.setValue("password", demoAccount.password, { shouldDirty: true, shouldValidate: true });
+    form.setValue("remember", true, { shouldDirty: true });
+    toast.success("已填充演示账号");
+  };
+
   const onSubmit = (data: z.infer<typeof formSchema>) => {
-    toast("You submitted the following values", {
-      description: (
-        <pre className="mt-2 w-[320px] rounded-md bg-neutral-950 p-4">
-          <code className="text-white">{JSON.stringify(data, null, 2)}</code>
-        </pre>
-      ),
-    });
+    window.localStorage.setItem(
+      "knowledge-card-demo-session",
+      JSON.stringify({
+        email: data.email,
+        remember: Boolean(data.remember),
+        loginAt: new Date().toISOString(),
+      }),
+    );
+    toast.success("登录成功，正在进入系统");
+    router.push("/dashboard");
   };
 
   return (
     <form noValidate onSubmit={form.handleSubmit(onSubmit)} className="flex flex-col gap-5">
+      <Button
+        className="h-11 w-full border-cyan-300/30 bg-cyan-300/10 text-cyan-50 hover:bg-cyan-300/20"
+        type="button"
+        variant="outline"
+        onClick={fillDemoAccount}
+      >
+        <WandSparkles className="size-4" />
+        自动填充演示账号 admin@example.com / 123456
+      </Button>
+
       <FieldGroup className="gap-5">
         <Controller
           control={form.control}
