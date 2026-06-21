@@ -46,6 +46,27 @@ echo 'OPENAI_API_KEY=your_openai_api_key' >> .env
 docker compose watch
 ```
 
+### Full-stack workspace
+
+The Next.js frontend has been integrated into the `frontend/` directory.
+
+Backend service:
+
+```sh
+cd F:\GraduationProject\KnowledgeCardAgent
+python src/run_service.py
+```
+
+Frontend dashboard:
+
+```sh
+cd F:\GraduationProject\KnowledgeCardAgent\frontend
+npm.cmd install --cache .\.npm-cache
+npm.cmd run dev
+```
+
+Open the dashboard at `http://localhost:3000/dashboard`. The frontend reads the backend base URL from `NEXT_PUBLIC_API_BASE_URL`; if it is not set, it uses `http://localhost:8080`.
+
 ### Architecture Diagram
 
 <img src="media/agent_architecture.png" width="600">
