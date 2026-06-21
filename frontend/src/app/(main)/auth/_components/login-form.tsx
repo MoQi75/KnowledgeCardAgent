@@ -63,7 +63,7 @@ export function LoginForm() {
         onClick={fillDemoAccount}
       >
         <WandSparkles className="size-4" />
-        自动填充演示账号 admin@example.com / 123456
+        自动填充演示账号
       </Button>
 
       <FieldGroup className="gap-5">
