@@ -3,7 +3,8 @@ param(
     [int]$BackendPort = 8080,
     [int]$FrontendPort = 3001,
     [switch]$Restart,
-    [switch]$Install
+    [switch]$Install,
+    [switch]$OpenBrowser
 )
 
 $ErrorActionPreference = "Stop"
@@ -15,6 +16,7 @@ $BackendOut = Join-Path $LogRoot "backend.out.log"
 $BackendErr = Join-Path $LogRoot "backend.err.log"
 $FrontendOut = Join-Path $LogRoot "frontend.out.log"
 $FrontendErr = Join-Path $LogRoot "frontend.err.log"
+$StatusLog = Join-Path $LogRoot "startup-status.txt"
 
 New-Item -ItemType Directory -Force -Path $LogRoot | Out-Null
 
@@ -22,6 +24,25 @@ function Assert-Command {
     param([string]$Name)
     if (-not (Get-Command $Name -ErrorAction SilentlyContinue)) {
         throw "Required command not found: $Name"
+    }
+}
+
+function Get-ChildProcessIds {
+    param([int]$ParentId)
+
+    $children = Get-CimInstance Win32_Process | Where-Object { $_.ParentProcessId -eq $ParentId }
+    foreach ($child in $children) {
+        Get-ChildProcessIds -ParentId $child.ProcessId
+        $child.ProcessId
+    }
+}
+
+function Stop-ProcessTree {
+    param([int]$ProcessId)
+
+    $ids = @(Get-ChildProcessIds -ParentId $ProcessId) + $ProcessId
+    foreach ($id in ($ids | Select-Object -Unique)) {
+        Stop-Process -Id $id -Force -ErrorAction SilentlyContinue
     }
 }
 
@@ -38,7 +59,7 @@ function Stop-ProjectProcesses {
     }
 
     foreach ($process in $processes) {
-        Stop-Process -Id $process.ProcessId -Force -ErrorAction SilentlyContinue
+        Stop-ProcessTree -ProcessId $process.ProcessId
     }
 
     $portOwners = Get-NetTCPConnection -LocalPort $BackendPort, $FrontendPort -ErrorAction SilentlyContinue |
@@ -47,8 +68,8 @@ function Stop-ProjectProcesses {
 
     foreach ($owner in $portOwners) {
         $process = Get-CimInstance Win32_Process -Filter "ProcessId=$owner" -ErrorAction SilentlyContinue
-        if ($process -and $process.ProcessId -ne $currentPid -and $process.CommandLine -like "*$RepoRoot*") {
-            Stop-Process -Id $process.ProcessId -Force -ErrorAction SilentlyContinue
+        if ($process -and $process.ProcessId -ne $currentPid) {
+            Stop-ProcessTree -ProcessId $process.ProcessId
         }
         elseif (-not $process) {
             Stop-Process -Id $owner -Force -ErrorAction SilentlyContinue
@@ -77,6 +98,18 @@ function Wait-Http {
     } while ((Get-Date) -lt $deadline)
 
     throw "$Name did not become ready: $Url"
+}
+
+function Test-HttpReady {
+    param([string]$Url)
+
+    try {
+        $response = Invoke-WebRequest -UseBasicParsing -Uri $Url -TimeoutSec 3
+        return $response.StatusCode -ge 200 -and $response.StatusCode -lt 500
+    }
+    catch {
+        return $false
+    }
 }
 
 Assert-Command "uv"
@@ -115,34 +148,63 @@ $env:PORT = [string]$BackendPort
 $env:MODE = "local"
 $env:NEXT_PUBLIC_API_BASE_URL = "http://127.0.0.1:$BackendPort"
 
-$backend = Start-Process `
-    -FilePath (Get-Command "uv").Source `
-    -ArgumentList @("run", "python", "src/run_service.py") `
-    -WorkingDirectory $RepoRoot `
-    -WindowStyle Hidden `
-    -RedirectStandardOutput $BackendOut `
-    -RedirectStandardError $BackendErr `
-    -PassThru
+$backendUrl = "http://127.0.0.1:$BackendPort/health"
+$frontendUrl = "http://127.0.0.1:$FrontendPort/dashboard/default"
 
-$frontend = Start-Process `
-    -FilePath (Get-Command "npm.cmd").Source `
-    -ArgumentList @("run", "dev", "--", "--hostname", "127.0.0.1", "--port", [string]$FrontendPort) `
-    -WorkingDirectory $FrontendRoot `
-    -WindowStyle Hidden `
-    -RedirectStandardOutput $FrontendOut `
-    -RedirectStandardError $FrontendErr `
-    -PassThru
+$backend = $null
+if (-not (Test-HttpReady -Url $backendUrl)) {
+    $backend = Start-Process `
+        -FilePath (Get-Command "uv").Source `
+        -ArgumentList @("run", "python", "src/run_service.py") `
+        -WorkingDirectory $RepoRoot `
+        -WindowStyle Hidden `
+        -RedirectStandardOutput $BackendOut `
+        -RedirectStandardError $BackendErr `
+        -PassThru
+}
 
-$backendStatus = Wait-Http -Name "Backend" -Url "http://127.0.0.1:$BackendPort/health" -TimeoutSeconds 90
-$frontendStatus = Wait-Http -Name "Frontend" -Url "http://127.0.0.1:$FrontendPort/dashboard/default" -TimeoutSeconds 90
+$frontend = $null
+if (-not (Test-HttpReady -Url $frontendUrl)) {
+    $frontend = Start-Process `
+        -FilePath (Get-Command "npm.cmd").Source `
+        -ArgumentList @("run", "dev", "--", "--hostname", "127.0.0.1", "--port", [string]$FrontendPort) `
+        -WorkingDirectory $FrontendRoot `
+        -WindowStyle Hidden `
+        -RedirectStandardOutput $FrontendOut `
+        -RedirectStandardError $FrontendErr `
+        -PassThru
+}
 
-Write-Output "KnowledgeCardAgent started successfully."
-Write-Output "Backend:  http://127.0.0.1:$BackendPort/health ($backendStatus)"
-Write-Output "Frontend: http://127.0.0.1:$FrontendPort/dashboard/default ($frontendStatus)"
-Write-Output "Backend PID:  $($backend.Id)"
-Write-Output "Frontend PID: $($frontend.Id)"
-Write-Output "Logs:"
-Write-Output "  $BackendOut"
-Write-Output "  $BackendErr"
-Write-Output "  $FrontendOut"
-Write-Output "  $FrontendErr"
+$backendStatus = Wait-Http -Name "Backend" -Url $backendUrl -TimeoutSeconds 90
+$frontendStatus = Wait-Http -Name "Frontend" -Url $frontendUrl -TimeoutSeconds 90
+
+if ($backend -and $backend.HasExited) {
+    throw "Backend process exited early. Check log: $BackendErr"
+}
+
+if ($frontend -and $frontend.HasExited) {
+    throw "Frontend process exited early. Check log: $FrontendErr"
+}
+
+$backendPid = if ($backend) { [string]$backend.Id } else { "already running" }
+$frontendPid = if ($frontend) { [string]$frontend.Id } else { "already running" }
+
+$summary = @(
+    "KnowledgeCardAgent started successfully."
+    "Backend:  $backendUrl ($backendStatus)"
+    "Frontend: $frontendUrl ($frontendStatus)"
+    "Backend PID:  $backendPid"
+    "Frontend PID: $frontendPid"
+    "Logs:"
+    "  $BackendOut"
+    "  $BackendErr"
+    "  $FrontendOut"
+    "  $FrontendErr"
+)
+
+$summary | Set-Content -Encoding UTF8 -Path $StatusLog
+$summary | ForEach-Object { [Console]::Out.WriteLine($_) }
+
+if ($OpenBrowser) {
+    Start-Process $frontendUrl | Out-Null
+}
