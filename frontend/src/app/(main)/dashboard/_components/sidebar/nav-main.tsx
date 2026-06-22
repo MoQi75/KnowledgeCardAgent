@@ -103,19 +103,19 @@ export function NavMain({ items }: NavMainProps) {
           <SidebarMenu>
             <SidebarMenuItem className="flex items-center gap-2">
               <SidebarMenuButton
-                tooltip="Quick Create"
-                className="min-w-8 bg-primary text-primary-foreground duration-200 ease-linear hover:bg-primary/90 hover:text-primary-foreground active:bg-primary/90 active:text-primary-foreground"
+                tooltip="快速新建"
+                className="min-w-8 rounded-2xl bg-[linear-gradient(135deg,#b70f46_0%,#d9366f_100%)] text-white shadow-[0_14px_28px_rgba(183,15,70,0.22)] duration-200 ease-linear hover:bg-[linear-gradient(135deg,#a70d40_0%,#c82962_100%)] hover:text-white active:text-white"
               >
                 <PlusCircleIcon />
-                <span>Quick Create</span>
+                <span>快速新建</span>
               </SidebarMenuButton>
               <Button
                 size="icon"
-                className="h-9 w-9 shrink-0 group-data-[collapsible=icon]:opacity-0"
+                className="h-9 w-9 shrink-0 border-[#d8cff6] bg-white/62 text-[#6d51b8] hover:bg-[#f7d5df]/70 hover:text-[#7f123c] group-data-[collapsible=icon]:opacity-0"
                 variant="outline"
               >
                 <MailIcon />
-                <span className="sr-only">Inbox</span>
+                <span className="sr-only">消息</span>
               </Button>
             </SidebarMenuItem>
           </SidebarMenu>

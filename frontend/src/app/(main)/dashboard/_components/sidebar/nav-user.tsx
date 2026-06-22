@@ -33,15 +33,15 @@ export function NavUser({
           <DropdownMenuTrigger asChild>
             <SidebarMenuButton
               size="lg"
-              className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
+              className="rounded-2xl border border-[#d8cff6] bg-white/58 text-[#19162b] shadow-[0_10px_24px_rgba(109,81,184,0.1)] data-[state=open]:bg-[#f7d5df]/75 data-[state=open]:text-[#7f123c]"
             >
-              <Avatar className="h-8 w-8 rounded-lg grayscale">
+              <Avatar className="h-8 w-8 rounded-lg ring-2 ring-[#d8cff6]">
                 <AvatarImage src={user.avatar || undefined} alt={user.name} />
-                <AvatarFallback className="rounded-lg">{getInitials(user.name)}</AvatarFallback>
+                <AvatarFallback className="rounded-lg bg-[#b70f46] text-white">{getInitials(user.name)}</AvatarFallback>
               </Avatar>
               <div className="grid flex-1 text-left text-sm leading-tight">
                 <span className="truncate font-medium">{user.name}</span>
-                <span className="truncate text-muted-foreground text-xs">{user.email}</span>
+                <span className="truncate text-[#6f6680] text-xs">{user.email}</span>
               </div>
               <EllipsisVertical className="ml-auto size-4" />
             </SidebarMenuButton>

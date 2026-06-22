@@ -7,7 +7,7 @@ from contextlib import asynccontextmanager
 from typing import Annotated, Any
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter, Depends, FastAPI, HTTPException, status
+from fastapi import APIRouter, Depends, FastAPI, File, Form, HTTPException, UploadFile, status
 from fastapi.responses import StreamingResponse
 from fastapi.routing import APIRoute
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -23,10 +23,12 @@ from langsmith import Client as LangsmithClient
 from langsmith import uuid7
 
 from agents import DEFAULT_AGENT, AgentGraph, get_agent, get_all_agent_info, load_agent
+from agents.card_review_agent import run_card_review_file_analysis
 from card_system.answer_checker import check_answer
 from card_system.review_planner import generate_review_plan
 from card_system.storage import (
     CardSystemStorageError,
+    DEFAULT_USER_ID,
     create_document,
     get_document,
     get_study_summary,
@@ -43,6 +45,7 @@ from card_system.storage import (
 from core import settings
 from memory import initialize_database, initialize_store
 from schema import (
+    AnalyzeFileResponse,
     ChatHistory,
     ChatHistoryInput,
     ChatMessage,
@@ -136,6 +139,13 @@ router = APIRouter(dependencies=[Depends(verify_bearer)])
 
 def _storage_exception(e: CardSystemStorageError) -> HTTPException:
     return HTTPException(status_code=503, detail=str(e))
+
+
+def _storage_user_id(user_id: str) -> str:
+    try:
+        return str(UUID(user_id))
+    except (TypeError, ValueError):
+        return DEFAULT_USER_ID
 
 
 async def _ensure_card_system_db() -> None:
@@ -243,6 +253,86 @@ async def list_card_system_documents() -> list[dict[str, Any]]:
         return await list_documents()
     except CardSystemStorageError as e:
         raise _storage_exception(e) from e
+
+
+@router.post(
+    "/card-system/agent/analyze-file",
+    response_model=AnalyzeFileResponse,
+    summary="Analyze an uploaded learning file with CardReviewAgent",
+)
+async def analyze_card_system_file(
+    file: UploadFile = File(...),
+    user_id: str = Form("default_user"),
+    learning_goal: str | None = Form(None),
+    card_count: int = Form(8),
+    quiz_count: int = Form(5),
+    review_days: int = Form(7),
+) -> AnalyzeFileResponse:
+    """Upload a learning file and run CardReviewAgent's full study workflow."""
+    filename = file.filename or "learning-material.txt"
+    file_bytes = await file.read()
+    if not file_bytes:
+        raise HTTPException(status_code=422, detail="file cannot be empty")
+    if card_count < 1 or quiz_count < 1 or review_days < 1:
+        raise HTTPException(status_code=422, detail="card_count, quiz_count and review_days must be positive")
+
+    async def save_agent_memory(state: dict[str, Any]) -> dict[str, Any]:
+        parsed = state["parsed_document"]
+        cards = state["cards"]
+        quizzes = state["quizzes"]
+        review_plan = state["review_plan_model"]
+        storage_user_id = _storage_user_id(user_id)
+
+        try:
+            await init_card_system_db()
+            document = await create_document(
+                title=str(parsed["filename"])[:120] or "CardReviewAgent 学习资料",
+                content=str(parsed["text"]),
+                file_path=str(parsed["filename"]),
+                user_id=storage_user_id,
+            )
+            document_id = str(document["id"])
+            for card in cards.cards:
+                card.document_id = document_id
+            await save_knowledge_cards(document_id, cards)
+            await save_quiz_questions(quizzes)
+            review_record = await save_review_plan(
+                review_plan,
+                title="CardReviewAgent 复习计划",
+                user_id=storage_user_id,
+            )
+            return {"document": document, "review_record": review_record}
+        except CardSystemStorageError as e:
+            logger.warning("CardReviewAgent memory fallback: %s", e)
+            return {
+                "document": {
+                    "id": str(uuid4()),
+                    "title": parsed["filename"],
+                    "content": parsed["text"],
+                    "file_path": parsed["filename"],
+                },
+                "fallback": True,
+                "error": str(e),
+            }
+
+    try:
+        result = await run_card_review_file_analysis(
+            filename=filename,
+            file_bytes=file_bytes,
+            user_id=user_id,
+            learning_goal=learning_goal,
+            card_count=card_count,
+            quiz_count=quiz_count,
+            review_days=review_days,
+            memory_saver=save_agent_memory,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
+    except Exception as e:
+        logger.error("CardReviewAgent file analysis failed: %s", e)
+        raise HTTPException(status_code=502, detail="CardReviewAgent file analysis failed") from e
+
+    return AnalyzeFileResponse(**result)
 
 
 @router.post(

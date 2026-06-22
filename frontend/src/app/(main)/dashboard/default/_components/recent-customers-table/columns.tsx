@@ -2,30 +2,32 @@
 "use no memo";
 
 import type { ColumnDef } from "@tanstack/react-table";
-import { addMinutes, differenceInCalendarDays, endOfToday, format, parseISO } from "date-fns";
-import { CircleAlertIcon, CircleCheckIcon, Clock3Icon, LoaderIcon, UserRound } from "lucide-react";
+import { CheckCircle2, Clock3, FileCheck2 } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 
-import type { RecentCustomerRow } from "./schema";
+import type { RecentAgentTaskRow } from "./schema";
 
-function billingIcon(billing: string) {
-  switch (billing) {
-    case "Paid":
-      return <CircleCheckIcon className="fill-green-500 stroke-primary-foreground dark:fill-green-600" />;
-    case "Pending":
-      return <LoaderIcon />;
-    case "Overdue":
-      return <CircleAlertIcon className="text-amber-600 dark:text-amber-500" />;
-    case "Trial":
-      return <Clock3Icon className="text-muted-foreground" />;
-    default:
-      return null;
-  }
+function statusBadge(status: string) {
+  const running = status === "进行中";
+
+  return (
+    <Badge
+      variant="outline"
+      className={
+        running
+          ? "border-[#f4b4c9] bg-[#fff6f8] text-[#b70f46]"
+          : "border-[#d8cff6] bg-[#f7f2ff] text-[#6d51b8]"
+      }
+    >
+      {running ? <Clock3 className="size-3" /> : <CheckCircle2 className="size-3" />}
+      {status}
+    </Badge>
+  );
 }
 
-export const recentCustomersColumns: ColumnDef<RecentCustomerRow>[] = [
+export const recentAgentTaskColumns: ColumnDef<RecentAgentTaskRow>[] = [
   {
     id: "select",
     header: ({ table }) => (
@@ -33,7 +35,7 @@ export const recentCustomersColumns: ColumnDef<RecentCustomerRow>[] = [
         <Checkbox
           checked={table.getIsAllPageRowsSelected() || (table.getIsSomePageRowsSelected() && "indeterminate")}
           onCheckedChange={(value) => table.toggleAllPageRowsSelected(!!value)}
-          aria-label="Select all customers on this page"
+          aria-label="选择当前页全部智能体任务"
         />
       </div>
     ),
@@ -42,27 +44,23 @@ export const recentCustomersColumns: ColumnDef<RecentCustomerRow>[] = [
         <Checkbox
           checked={row.getIsSelected()}
           onCheckedChange={(value) => row.toggleSelected(!!value)}
-          aria-label={`Select ${row.original.name}`}
+          aria-label={`选择 ${row.original.taskName}`}
         />
       </div>
     ),
     enableHiding: false,
   },
   {
-    accessorKey: "name",
-    header: "Customer",
+    accessorKey: "taskName",
+    header: "任务名称",
     cell: ({ row }) => (
-      <div className="flex items-center gap-2">
-        <span className="flex size-8 items-center justify-center rounded-md border bg-muted">
-          <UserRound className="size-4 text-muted-foreground" />
+      <div className="flex min-w-0 items-center gap-2">
+        <span className="flex size-8 items-center justify-center rounded-md border border-[#e2d6fb] bg-[#f7f2ff]">
+          <FileCheck2 className="size-4 text-[#6d51b8]" />
         </span>
-        <div className="min-w-0 flex-1">
-          <div className="flex items-end justify-between gap-3">
-            <div className="grid min-w-0 gap-0.5">
-              <span className="truncate font-medium text-sm leading-none">{row.original.name}</span>
-              <span className="truncate text-muted-foreground text-xs leading-none">#{row.original.id}</span>
-            </div>
-          </div>
+        <div className="grid min-w-0 gap-0.5">
+          <span className="truncate font-medium text-[#19162b] text-sm leading-none">{row.original.taskName}</span>
+          <span className="truncate text-[#8b7f98] text-xs leading-none">#{row.original.id}</span>
         </div>
       </div>
     ),
@@ -70,61 +68,42 @@ export const recentCustomersColumns: ColumnDef<RecentCustomerRow>[] = [
   },
   {
     id: "search",
-    accessorFn: (row) => `${row.id} ${row.name} ${row.email}`,
+    accessorFn: (row) => `${row.id} ${row.taskName} ${row.intent} ${row.tools.join(" ")} ${row.status}`,
     filterFn: "includesString",
     enableHiding: true,
   },
   {
+    accessorKey: "intent",
+    header: "用户意图",
+    cell: ({ row }) => <span className="text-sm">{row.original.intent}</span>,
+  },
+  {
+    accessorKey: "tools",
+    header: "调用工具",
+    cell: ({ row }) => (
+      <div className="flex max-w-[360px] flex-wrap gap-1.5">
+        {row.original.tools.map((tool) => (
+          <Badge key={tool} variant="secondary" className="bg-[#f0e9ff] text-[#6d51b8]">
+            {tool}
+          </Badge>
+        ))}
+      </div>
+    ),
+  },
+  {
     accessorKey: "status",
-    header: "Status",
+    header: "执行状态",
     filterFn: "equalsString",
-    cell: ({ row }) => (
-      <Badge variant="outline" className="px-1.5 text-muted-foreground">
-        {row.original.status}
-      </Badge>
-    ),
+    cell: ({ row }) => statusBadge(row.original.status),
   },
   {
-    accessorKey: "billing",
-    header: "Billing",
-    filterFn: "equalsString",
-    cell: ({ row }) => (
-      <Badge variant="outline" className="px-1.5 text-muted-foreground">
-        {billingIcon(row.original.billing)}
-        {row.original.billing}
-      </Badge>
-    ),
+    accessorKey: "completedAt",
+    header: "完成时间",
+    cell: ({ row }) => <span className="text-sm">{row.original.completedAt}</span>,
   },
   {
-    accessorKey: "plan",
-    header: "Plan",
-    cell: ({ row }) => <span className="text-sm">{row.original.plan}</span>,
-  },
-  {
-    id: "joinedWindow",
-    accessorFn: (row) => {
-      const daysSinceJoined = differenceInCalendarDays(endOfToday(), parseISO(row.joined));
-
-      if (daysSinceJoined <= 30) return ["30", "90"];
-      if (daysSinceJoined <= 90) return ["90"];
-      return [];
-    },
-    filterFn: "arrIncludes",
+    accessorKey: "order",
+    header: "",
     enableHiding: true,
-  },
-  {
-    accessorKey: "joined",
-    header: "Joined",
-    cell: ({ row }) => {
-      const baseDate = parseISO(row.original.joined);
-      const joinedAt = addMinutes(baseDate, 9 * 60 + (Number(row.original.id) % 12) * 17);
-
-      return (
-        <div className="grid gap-0.5">
-          <span className="text-sm">{format(joinedAt, "do MMMM yyyy")}</span>
-          <span className="text-muted-foreground text-xs">at {format(joinedAt, "h:mm a")}</span>
-        </div>
-      );
-    },
   },
 ];

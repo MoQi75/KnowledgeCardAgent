@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Field, FieldContent, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { setClientCookie } from "@/lib/cookie.client";
 
 const demoAccount = {
   email: "admin@example.com",
@@ -50,6 +51,8 @@ export function LoginForm() {
         loginAt: new Date().toISOString(),
       }),
     );
+    setClientCookie("theme_mode", "light", 60 * 60 * 24 * 365);
+    setClientCookie("theme_preset", "default", 60 * 60 * 24 * 365);
     toast.success("登录成功，正在进入系统");
     router.push("/dashboard");
   };

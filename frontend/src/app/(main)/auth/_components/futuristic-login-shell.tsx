@@ -2,7 +2,7 @@ import { ArrowRight, BookOpenCheck } from "lucide-react";
 
 import { LoginForm } from "./login-form";
 
-const formalProjectName = "基于 LangGraph + FastAPI + RAG 的知识卡片生成与复习规划智能体系统";
+const formalProjectName = "知识卡片生成与复习规划智能体系统";
 const flowSteps = ["资料输入", "知识提取", "卡片生成", "自测反馈", "复习规划"];
 const floatingCards = [
   { label: "RAG 检索", className: "top-[18%] left-[8%]" },
@@ -77,8 +77,8 @@ export function FuturisticLoginShell() {
 
               {floatingCards.map((card, index) => (
                 <div
-                  className={`login-floating-card absolute rounded-2xl bg-white/88 px-4 py-3 font-medium text-[#4f4564] text-sm shadow-[0_14px_28px_rgba(78,55,126,0.13)] ${card.className}`}
                   key={card.label}
+                  className={`login-floating-card absolute rounded-2xl bg-white/88 px-4 py-3 font-medium text-[#4f4564] text-sm shadow-[0_14px_28px_rgba(78,55,126,0.13)] ${card.className}`}
                   style={{ animationDelay: `${index * 0.3}s` }}
                 >
                   {card.label}
@@ -105,7 +105,7 @@ export function FuturisticLoginShell() {
               </div>
               <div className="text-left">
                 <div className="font-semibold text-[#151426] text-lg">知识卡片复习系统</div>
-                <div className="text-[#6c627c] text-xs">LangGraph · FastAPI · RAG</div>
+                <div className="text-[#6c627c] text-xs">LangGraph + FastAPI + RAG</div>
               </div>
             </div>
 
@@ -117,7 +117,7 @@ export function FuturisticLoginShell() {
 
               <LoginForm />
 
-              <p className="mt-7 text-center text-[#857a98] text-xs">Powered by LangGraph · FastAPI · RAG</p>
+              <p className="mt-7 text-center text-[#857a98] text-xs">Powered by LangGraph + FastAPI + RAG</p>
             </div>
           </div>
         </div>

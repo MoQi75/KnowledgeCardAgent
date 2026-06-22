@@ -1,6 +1,8 @@
 from schema.models import AllModelEnum
 from schema.card import KnowledgeCard, KnowledgeCardList
 from schema.card_system import (
+    AgentTraceItem,
+    AnalyzeFileResponse,
     CreateDocumentRequest,
     GenerateCardsRequest,
     GenerateCardsResponse,
@@ -35,6 +37,8 @@ __all__ = [
     "AllModelEnum",
     "KnowledgeCard",
     "KnowledgeCardList",
+    "AgentTraceItem",
+    "AnalyzeFileResponse",
     "CreateDocumentRequest",
     "GenerateCardsRequest",
     "GenerateCardsResponse",

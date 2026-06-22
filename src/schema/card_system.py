@@ -1,3 +1,5 @@
+from typing import Any
+
 from pydantic import BaseModel, Field
 
 from schema.card import KnowledgeCardList
@@ -63,4 +65,25 @@ class GenerateReviewPlanResponse(BaseModel):
 
 class StudySummaryResponse(StudySummary):
     """学习统计响应。"""
+
+
+class AgentTraceItem(BaseModel):
+    """CardReviewAgent 前端执行过程展示项。"""
+
+    step: int = Field(ge=1, description="执行步骤序号")
+    name: str = Field(description="步骤名称")
+    status: str = Field(description="执行状态")
+    detail: str = Field(description="步骤说明")
+
+
+class AnalyzeFileResponse(BaseModel):
+    """上传学习资料后的智能体分析响应。"""
+
+    document_id: str
+    agent_name: str = Field(default="CardReviewAgent")
+    agent_trace: list[AgentTraceItem]
+    cards: list[dict[str, Any]]
+    quizzes: list[dict[str, Any]]
+    review_plan: dict[str, Any]
+    summary: dict[str, Any]
 

@@ -5,28 +5,30 @@ import { Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
-import customersData from "./data.json";
-import type { RecentCustomerRow } from "./recent-customers-table/schema";
-import { RecentCustomersTable } from "./recent-customers-table/table";
+import agentTasksData from "./data.json";
+import type { RecentAgentTaskRow } from "./recent-customers-table/schema";
+import { RecentAgentTasksTable } from "./recent-customers-table/table";
 
-const customers = customersData as RecentCustomerRow[];
+const agentTasks = agentTasksData as RecentAgentTaskRow[];
 
 export function SubscriberOverview() {
   return (
-    <Card>
+    <Card className="border-[#e7dffd] bg-[#fffafe]/92 shadow-[0_16px_42px_rgba(109,81,184,0.1)]">
       <CardHeader>
-        <CardTitle className="leading-none">18,426 Customers</CardTitle>
-        <CardDescription>Recent customer records with plan, billing, status, and signup activity.</CardDescription>
+        <CardTitle className="text-[#19162b] leading-none">最近智能体任务</CardTitle>
+        <CardDescription className="text-[#6f6680]">
+          记录 CardReviewAgent 最近执行的学习任务、调用工具和处理状态。
+        </CardDescription>
         <CardAction>
           <Button variant="outline" size="sm">
             <Download />
-            Export
+            导出记录
           </Button>
         </CardAction>
       </CardHeader>
 
       <CardContent className="pt-0">
-        <RecentCustomersTable data={customers} />
+        <RecentAgentTasksTable data={agentTasks} />
       </CardContent>
     </Card>
   );

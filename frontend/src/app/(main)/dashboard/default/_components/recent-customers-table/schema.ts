@@ -1,13 +1,13 @@
 import z from "zod";
 
-export const recentCustomersSchema = z.object({
+export const recentAgentTaskSchema = z.object({
   id: z.string(),
-  name: z.string(),
-  email: z.string(),
-  plan: z.string(),
+  taskName: z.string(),
+  intent: z.string(),
+  tools: z.array(z.string()),
   status: z.string(),
-  billing: z.string(),
-  joined: z.string(),
+  completedAt: z.string(),
+  order: z.number(),
 });
 
-export type RecentCustomerRow = z.infer<typeof recentCustomersSchema>;
+export type RecentAgentTaskRow = z.infer<typeof recentAgentTaskSchema>;

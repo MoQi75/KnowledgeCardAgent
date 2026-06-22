@@ -77,9 +77,12 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
       <SidebarHeader>
         <SidebarMenu>
           <SidebarMenuItem>
-            <SidebarMenuButton asChild>
+            <SidebarMenuButton
+              asChild
+              className="h-12 rounded-2xl border border-[#d8cff6] bg-white/58 text-[#19162b] shadow-[0_10px_24px_rgba(109,81,184,0.12)] hover:bg-white/80 hover:text-[#7f123c]"
+            >
               <Link prefetch={false} href="/dashboard">
-                <Brain />
+                <Brain className="text-[#b70f46]" />
                 <span className="font-semibold text-base">{APP_CONFIG.name}</span>
               </Link>
             </SidebarMenuButton>
