@@ -68,6 +68,7 @@ coverage.xml
 *.py,cover
 .hypothesis/
 .pytest_cache/
+.ruff_cache/
 cover/
 
 # Translations
@@ -193,3 +194,6 @@ cython_debug/
 # Private Credentials, ignore everything in the folder but the .gitkeep file
 privatecredentials/*
 !privatecredentials/.gitkeep
+
+# Local scratch copies
+knowledge-card-system/

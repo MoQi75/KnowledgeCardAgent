@@ -1,10 +1,12 @@
-"""知识卡片系统的 PostgreSQL 持久化层。"""
+"""Knowledge card system persistence layer backed by MySQL."""
 
 import json
 import os
-from collections.abc import Sequence
+from collections.abc import AsyncIterator, Sequence
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 from dotenv import find_dotenv, load_dotenv
 
@@ -16,7 +18,7 @@ DEFAULT_USER_ID = "00000000-0000-0000-0000-000000000001"
 
 
 class CardSystemStorageError(RuntimeError):
-    """知识卡片系统存储层错误。"""
+    """Raised when the knowledge card storage layer cannot complete an operation."""
 
 
 def _load_env() -> None:
@@ -25,46 +27,60 @@ def _load_env() -> None:
         load_dotenv(env_file, override=False)
 
 
-def _require_postgres_config() -> dict[str, str]:
+def _require_mysql_config() -> dict[str, Any]:
     _load_env()
     required = {
-        "user": os.getenv("POSTGRES_USER"),
-        "password": os.getenv("POSTGRES_PASSWORD"),
-        "host": os.getenv("POSTGRES_HOST"),
-        "port": os.getenv("POSTGRES_PORT"),
-        "dbname": os.getenv("POSTGRES_DB"),
+        "user": os.getenv("MYSQL_USER"),
+        "password": os.getenv("MYSQL_PASSWORD"),
+        "host": os.getenv("MYSQL_HOST"),
+        "port": os.getenv("MYSQL_PORT"),
+        "db": os.getenv("MYSQL_DATABASE"),
     }
     missing = [key for key, value in required.items() if not value]
     if missing:
         env_names = {
-            "user": "POSTGRES_USER",
-            "password": "POSTGRES_PASSWORD",
-            "host": "POSTGRES_HOST",
-            "port": "POSTGRES_PORT",
-            "dbname": "POSTGRES_DB",
+            "user": "MYSQL_USER",
+            "password": "MYSQL_PASSWORD",
+            "host": "MYSQL_HOST",
+            "port": "MYSQL_PORT",
+            "db": "MYSQL_DATABASE",
         }
         missing_names = ", ".join(env_names[key] for key in missing)
         raise CardSystemStorageError(
-            f"Missing PostgreSQL configuration: {missing_names}. "
+            f"Missing MySQL configuration: {missing_names}. "
             "Set these environment variables before using card system storage."
         )
-    return {key: str(value) for key, value in required.items()}
+
+    config: dict[str, Any] = {key: str(value) for key, value in required.items()}
+    config["port"] = int(config["port"])
+    return config
 
 
-async def _connect():
-    """延迟导入 psycopg，确保数据库不可用时模块 import 不失败。"""
+@asynccontextmanager
+async def _connect() -> AsyncIterator[Any]:
+    """Delay importing aiomysql so module import still works without a database driver."""
     try:
-        from psycopg import AsyncConnection
-        from psycopg.rows import dict_row
+        import aiomysql
     except ImportError as e:
         raise CardSystemStorageError(
-            "psycopg is required for card system storage. Install project dependencies first."
+            "aiomysql is required for MySQL card system storage. Install project dependencies first."
         ) from e
 
     try:
-        return await AsyncConnection.connect(**_require_postgres_config(), row_factory=dict_row)
+        conn = await aiomysql.connect(
+            **_require_mysql_config(),
+            charset="utf8mb4",
+            autocommit=False,
+            cursorclass=aiomysql.DictCursor,
+        )
     except Exception as e:
-        raise CardSystemStorageError(f"Unable to connect to PostgreSQL: {e}") from e
+        raise CardSystemStorageError(f"Unable to connect to MySQL: {e}") from e
+
+    try:
+        yield conn
+    finally:
+        conn.close()
+        await conn.ensure_closed()
 
 
 def _schema_sql() -> str:
@@ -75,10 +91,47 @@ def _json(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False)
 
 
+JSON_FIELDS = {"keywords", "common_mistakes", "related_concepts", "options", "weak_points"}
+
+
+def _decode_json_value(value: Any) -> Any:
+    if not isinstance(value, str):
+        return value
+    try:
+        return json.loads(value)
+    except json.JSONDecodeError:
+        return value
+
+
+def _normalize_row(row: dict[str, Any]) -> dict[str, Any]:
+    normalized = dict(row)
+    for field in JSON_FIELDS & normalized.keys():
+        normalized[field] = _decode_json_value(normalized[field])
+    return normalized
+
+
+def _new_id() -> str:
+    return str(uuid4())
+
+
+async def _fetch_one(conn: Any, query: str, params: tuple[Any, ...]) -> dict[str, Any] | None:
+    async with conn.cursor() as cur:
+        await cur.execute(query, params)
+        row = await cur.fetchone()
+    return _normalize_row(dict(row)) if row else None
+
+
+async def _execute_schema(conn: Any, schema: str) -> None:
+    async with conn.cursor() as cur:
+        statements = [statement.strip() for statement in schema.split(";") if statement.strip()]
+        for statement in statements:
+            await cur.execute(statement)
+
+
 async def init_card_system_db() -> None:
-    """初始化知识卡片系统所需的数据表。"""
-    async with await _connect() as conn:
-        await conn.execute(_schema_sql())
+    """Initialize all tables required by the knowledge card system."""
+    async with _connect() as conn:
+        await _execute_schema(conn, _schema_sql())
         await conn.commit()
 
 
@@ -88,25 +141,27 @@ async def create_document(
     file_path: str | None = None,
     user_id: str = DEFAULT_USER_ID,
 ) -> dict[str, Any]:
-    """创建学习资料记录。"""
-    async with await _connect() as conn:
+    """Create a learning material record."""
+    document_id = _new_id()
+    async with _connect() as conn:
         async with conn.cursor() as cur:
             await cur.execute(
                 """
-                INSERT INTO documents (user_id, title, content, file_path)
-                VALUES (%s, %s, %s, %s)
-                RETURNING *
+                INSERT INTO documents (id, user_id, title, content, file_path)
+                VALUES (%s, %s, %s, %s, %s)
                 """,
-                (user_id, title, content, file_path),
+                (document_id, user_id, title, content, file_path),
             )
-            row = await cur.fetchone()
         await conn.commit()
-    return dict(row)
+        document = await _fetch_one(conn, "SELECT * FROM documents WHERE id = %s", (document_id,))
+    if not document:
+        raise CardSystemStorageError("Failed to create document.")
+    return document
 
 
 async def list_documents(user_id: str = DEFAULT_USER_ID) -> list[dict[str, Any]]:
-    """列出用户的学习资料。"""
-    async with await _connect() as conn:
+    """List learning materials for a user."""
+    async with _connect() as conn:
         async with conn.cursor() as cur:
             await cur.execute(
                 """
@@ -118,16 +173,13 @@ async def list_documents(user_id: str = DEFAULT_USER_ID) -> list[dict[str, Any]]
                 (user_id,),
             )
             rows = await cur.fetchall()
-    return [dict(row) for row in rows]
+    return [_normalize_row(dict(row)) for row in rows]
 
 
 async def get_document(document_id: str) -> dict[str, Any] | None:
-    """按 ID 获取学习资料。"""
-    async with await _connect() as conn:
-        async with conn.cursor() as cur:
-            await cur.execute("SELECT * FROM documents WHERE id = %s", (document_id,))
-            row = await cur.fetchone()
-    return dict(row) if row else None
+    """Get a learning material by ID."""
+    async with _connect() as conn:
+        return await _fetch_one(conn, "SELECT * FROM documents WHERE id = %s", (document_id,))
 
 
 def _normalize_cards(cards: KnowledgeCardList | Sequence[KnowledgeCard]) -> list[KnowledgeCard]:
@@ -139,9 +191,9 @@ def _normalize_cards(cards: KnowledgeCardList | Sequence[KnowledgeCard]) -> list
 async def save_knowledge_cards(
     document_id: str, cards: KnowledgeCardList | Sequence[KnowledgeCard]
 ) -> list[dict[str, Any]]:
-    """保存知识卡片。"""
+    """Save generated knowledge cards."""
     saved: list[dict[str, Any]] = []
-    async with await _connect() as conn:
+    async with _connect() as conn:
         async with conn.cursor() as cur:
             for card in _normalize_cards(cards):
                 await cur.execute(
@@ -150,17 +202,16 @@ async def save_knowledge_cards(
                         id, document_id, title, summary, keywords, explanation, example,
                         common_mistakes, related_concepts, source_text, created_at
                     )
-                    VALUES (%s, %s, %s, %s, %s::jsonb, %s, %s, %s::jsonb, %s::jsonb, %s, %s)
-                    ON CONFLICT (id) DO UPDATE SET
-                        title = EXCLUDED.title,
-                        summary = EXCLUDED.summary,
-                        keywords = EXCLUDED.keywords,
-                        explanation = EXCLUDED.explanation,
-                        example = EXCLUDED.example,
-                        common_mistakes = EXCLUDED.common_mistakes,
-                        related_concepts = EXCLUDED.related_concepts,
-                        source_text = EXCLUDED.source_text
-                    RETURNING *
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    ON DUPLICATE KEY UPDATE
+                        title = VALUES(title),
+                        summary = VALUES(summary),
+                        keywords = VALUES(keywords),
+                        explanation = VALUES(explanation),
+                        example = VALUES(example),
+                        common_mistakes = VALUES(common_mistakes),
+                        related_concepts = VALUES(related_concepts),
+                        source_text = VALUES(source_text)
                     """,
                     (
                         card.id,
@@ -176,15 +227,17 @@ async def save_knowledge_cards(
                         card.created_at,
                     ),
                 )
-                row = await cur.fetchone()
-                saved.append(dict(row))
         await conn.commit()
+        for card in _normalize_cards(cards):
+            row = await _fetch_one(conn, "SELECT * FROM knowledge_cards WHERE id = %s", (card.id,))
+            if row:
+                saved.append(row)
     return saved
 
 
 async def list_knowledge_cards(document_id: str | None = None) -> list[dict[str, Any]]:
-    """列出知识卡片，可按文档过滤。"""
-    async with await _connect() as conn:
+    """List knowledge cards, optionally filtered by document ID."""
+    async with _connect() as conn:
         async with conn.cursor() as cur:
             if document_id:
                 await cur.execute(
@@ -199,7 +252,7 @@ async def list_knowledge_cards(document_id: str | None = None) -> list[dict[str,
             else:
                 await cur.execute("SELECT * FROM knowledge_cards ORDER BY created_at DESC")
             rows = await cur.fetchall()
-    return [dict(row) for row in rows]
+    return [_normalize_row(dict(row)) for row in rows]
 
 
 def _normalize_questions(
@@ -213,9 +266,9 @@ def _normalize_questions(
 async def save_quiz_questions(
     questions: QuizQuestionList | Sequence[QuizQuestion],
 ) -> list[dict[str, Any]]:
-    """保存练习题。"""
+    """Save generated quiz questions."""
     saved: list[dict[str, Any]] = []
-    async with await _connect() as conn:
+    async with _connect() as conn:
         async with conn.cursor() as cur:
             for question in _normalize_questions(questions):
                 await cur.execute(
@@ -224,16 +277,15 @@ async def save_quiz_questions(
                         id, card_id, question_type, question, options, answer,
                         explanation, difficulty, related_card_title
                     )
-                    VALUES (%s, %s, %s, %s, %s::jsonb, %s, %s, %s, %s)
-                    ON CONFLICT (id) DO UPDATE SET
-                        question_type = EXCLUDED.question_type,
-                        question = EXCLUDED.question,
-                        options = EXCLUDED.options,
-                        answer = EXCLUDED.answer,
-                        explanation = EXCLUDED.explanation,
-                        difficulty = EXCLUDED.difficulty,
-                        related_card_title = EXCLUDED.related_card_title
-                    RETURNING *
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    ON DUPLICATE KEY UPDATE
+                        question_type = VALUES(question_type),
+                        question = VALUES(question),
+                        options = VALUES(options),
+                        answer = VALUES(answer),
+                        explanation = VALUES(explanation),
+                        difficulty = VALUES(difficulty),
+                        related_card_title = VALUES(related_card_title)
                     """,
                     (
                         question.id,
@@ -247,15 +299,19 @@ async def save_quiz_questions(
                         question.related_card_title,
                     ),
                 )
-                row = await cur.fetchone()
-                saved.append(dict(row))
         await conn.commit()
+        for question in _normalize_questions(questions):
+            row = await _fetch_one(
+                conn, "SELECT * FROM quiz_questions WHERE id = %s", (question.id,)
+            )
+            if row:
+                saved.append(row)
     return saved
 
 
 async def list_quiz_questions(card_id: str | None = None) -> list[dict[str, Any]]:
-    """列出练习题，可按知识卡片过滤。"""
-    async with await _connect() as conn:
+    """List quiz questions, optionally filtered by card ID."""
+    async with _connect() as conn:
         async with conn.cursor() as cur:
             if card_id:
                 await cur.execute(
@@ -270,7 +326,7 @@ async def list_quiz_questions(card_id: str | None = None) -> list[dict[str, Any]
             else:
                 await cur.execute("SELECT * FROM quiz_questions ORDER BY created_at DESC")
             rows = await cur.fetchall()
-    return [dict(row) for row in rows]
+    return [_normalize_row(dict(row)) for row in rows]
 
 
 async def save_answer_record(
@@ -278,18 +334,19 @@ async def save_answer_record(
     result: AnswerCheckResult,
     user_id: str = DEFAULT_USER_ID,
 ) -> dict[str, Any]:
-    """保存答题记录；答错时同步更新错题表。"""
-    async with await _connect() as conn:
+    """Save an answer record and update wrong-question memory when needed."""
+    record_id = _new_id()
+    async with _connect() as conn:
         async with conn.cursor() as cur:
             await cur.execute(
                 """
                 INSERT INTO answer_records (
-                    user_id, question_id, user_answer, is_correct, score, feedback
+                    id, user_id, question_id, user_answer, is_correct, score, feedback
                 )
-                VALUES (%s, %s, %s, %s, %s, %s)
-                RETURNING *
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
                 """,
                 (
+                    record_id,
                     user_id,
                     submission.question_id,
                     submission.user_answer,
@@ -298,29 +355,31 @@ async def save_answer_record(
                     result.feedback,
                 ),
             )
-            row = await cur.fetchone()
 
             if not result.is_correct:
                 await cur.execute(
                     """
                     INSERT INTO wrong_questions (
-                        user_id, question_id, related_knowledge, error_count, last_wrong_at
+                        id, user_id, question_id, related_knowledge, error_count, last_wrong_at
                     )
-                    VALUES (%s, %s, %s, 1, CURRENT_TIMESTAMP)
-                    ON CONFLICT (user_id, question_id) DO UPDATE SET
-                        related_knowledge = EXCLUDED.related_knowledge,
-                        error_count = wrong_questions.error_count + 1,
+                    VALUES (%s, %s, %s, %s, 1, CURRENT_TIMESTAMP)
+                    ON DUPLICATE KEY UPDATE
+                        related_knowledge = VALUES(related_knowledge),
+                        error_count = error_count + 1,
                         last_wrong_at = CURRENT_TIMESTAMP
                     """,
-                    (user_id, submission.question_id, result.weak_point),
+                    (_new_id(), user_id, submission.question_id, result.weak_point),
                 )
         await conn.commit()
-    return dict(row)
+        record = await _fetch_one(conn, "SELECT * FROM answer_records WHERE id = %s", (record_id,))
+    if not record:
+        raise CardSystemStorageError("Failed to save answer record.")
+    return record
 
 
 async def list_wrong_questions(user_id: str = DEFAULT_USER_ID) -> list[dict[str, Any]]:
-    """列出用户错题。"""
-    async with await _connect() as conn:
+    """List wrong questions for a user."""
+    async with _connect() as conn:
         async with conn.cursor() as cur:
             await cur.execute(
                 """
@@ -333,7 +392,7 @@ async def list_wrong_questions(user_id: str = DEFAULT_USER_ID) -> list[dict[str,
                 (user_id,),
             )
             rows = await cur.fetchall()
-    return [dict(row) for row in rows]
+    return [_normalize_row(dict(row)) for row in rows]
 
 
 async def save_review_plan(
@@ -341,30 +400,31 @@ async def save_review_plan(
     title: str = "知识卡片复习计划",
     user_id: str = DEFAULT_USER_ID,
 ) -> dict[str, Any]:
-    """保存复习计划和计划中的每日任务。"""
-    async with await _connect() as conn:
+    """Save a review plan and its daily tasks."""
+    async with _connect() as conn:
         async with conn.cursor() as cur:
             await cur.execute(
                 """
                 INSERT INTO review_plans (id, user_id, title, weak_points, created_at)
-                VALUES (%s, %s, %s, %s::jsonb, %s)
-                ON CONFLICT (id) DO UPDATE SET
-                    title = EXCLUDED.title,
-                    weak_points = EXCLUDED.weak_points
-                RETURNING *
+                VALUES (%s, %s, %s, %s, %s)
+                ON DUPLICATE KEY UPDATE
+                    title = VALUES(title),
+                    weak_points = VALUES(weak_points)
                 """,
                 (plan.id, user_id, title, _json(plan.weak_points), plan.created_at),
             )
-            row = await cur.fetchone()
 
             await cur.execute("DELETE FROM review_tasks WHERE plan_id = %s", (plan.id,))
             for task in plan.tasks:
                 await cur.execute(
                     """
-                    INSERT INTO review_tasks (plan_id, day, topic, task, reason, is_completed)
-                    VALUES (%s, %s, %s, %s, %s, %s)
+                    INSERT INTO review_tasks (
+                        id, plan_id, day, topic, task, reason, is_completed
+                    )
+                    VALUES (%s, %s, %s, %s, %s, %s, %s)
                     """,
                     (
+                        _new_id(),
                         plan.id,
                         task.day,
                         task.topic,
@@ -374,12 +434,15 @@ async def save_review_plan(
                     ),
                 )
         await conn.commit()
-    return dict(row)
+        record = await _fetch_one(conn, "SELECT * FROM review_plans WHERE id = %s", (plan.id,))
+    if not record:
+        raise CardSystemStorageError("Failed to save review plan.")
+    return record
 
 
 async def get_study_summary(user_id: str = DEFAULT_USER_ID) -> StudySummary:
-    """统计用户学习数据。"""
-    async with await _connect() as conn:
+    """Aggregate user learning statistics."""
+    async with _connect() as conn:
         async with conn.cursor() as cur:
             await cur.execute(
                 """
@@ -402,7 +465,7 @@ async def get_study_summary(user_id: str = DEFAULT_USER_ID) -> StudySummary:
                     (
                         SELECT COUNT(*)
                         FROM answer_records
-                        WHERE user_id = %s AND is_correct = false
+                        WHERE user_id = %s AND is_correct = 0
                     ) AS wrong_count
                 """,
                 (user_id, user_id, user_id, user_id, user_id),

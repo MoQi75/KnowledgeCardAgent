@@ -106,4 +106,3 @@ def _keyword_score(query_terms: list[str], chunk_terms: list[str]) -> float:
     counts = Counter(chunk_terms)
     length_norm = math.sqrt(max(len(chunk_terms), 1))
     return sum(counts[term] for term in query_terms) / length_norm
-

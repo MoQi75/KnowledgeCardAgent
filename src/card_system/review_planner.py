@@ -16,4 +16,3 @@ async def generate_review_plan(weak_points: list[str]) -> ReviewPlan:
         for index, point in enumerate(points[:7])
     ]
     return ReviewPlan(weak_points=points, tasks=tasks)
-

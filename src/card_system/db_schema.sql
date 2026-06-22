@@ -1,106 +1,116 @@
-CREATE EXTENSION IF NOT EXISTS pgcrypto;
-
 CREATE TABLE IF NOT EXISTS users (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    name TEXT NOT NULL,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
+    id CHAR(36) PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-INSERT INTO users (id, name)
-VALUES ('00000000-0000-0000-0000-000000000001', 'default')
-ON CONFLICT (id) DO NOTHING;
+INSERT IGNORE INTO users (id, name)
+VALUES ('00000000-0000-0000-0000-000000000001', 'default');
 
 CREATE TABLE IF NOT EXISTS documents (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    title TEXT NOT NULL,
-    content TEXT NOT NULL,
-    file_path TEXT,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
+    id CHAR(36) PRIMARY KEY,
+    user_id CHAR(36) NOT NULL,
+    title VARCHAR(255) NOT NULL,
+    content LONGTEXT NOT NULL,
+    file_path VARCHAR(1024),
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_documents_user
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS document_chunks (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    document_id UUID NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
-    chunk_index INTEGER NOT NULL,
-    content TEXT NOT NULL,
-    metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE (document_id, chunk_index)
-);
+    id CHAR(36) PRIMARY KEY,
+    document_id CHAR(36) NOT NULL,
+    chunk_index INT NOT NULL,
+    content LONGTEXT NOT NULL,
+    metadata JSON NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_document_chunks_document_index (document_id, chunk_index),
+    CONSTRAINT fk_document_chunks_document
+        FOREIGN KEY (document_id) REFERENCES documents(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS knowledge_cards (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    document_id UUID NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
-    title TEXT NOT NULL,
+    id CHAR(36) PRIMARY KEY,
+    document_id CHAR(36) NOT NULL,
+    title VARCHAR(255) NOT NULL,
     summary TEXT NOT NULL,
-    keywords JSONB NOT NULL DEFAULT '[]'::jsonb,
-    explanation TEXT NOT NULL,
-    example TEXT NOT NULL DEFAULT '',
-    common_mistakes JSONB NOT NULL DEFAULT '[]'::jsonb,
-    related_concepts JSONB NOT NULL DEFAULT '[]'::jsonb,
-    source_text TEXT NOT NULL,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
+    keywords JSON NOT NULL,
+    explanation LONGTEXT NOT NULL,
+    example TEXT NOT NULL,
+    common_mistakes JSON NOT NULL,
+    related_concepts JSON NOT NULL,
+    source_text LONGTEXT NOT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_knowledge_cards_document
+        FOREIGN KEY (document_id) REFERENCES documents(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS quiz_questions (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    card_id UUID NOT NULL REFERENCES knowledge_cards(id) ON DELETE CASCADE,
-    question_type TEXT NOT NULL,
-    question TEXT NOT NULL,
-    options JSONB NOT NULL DEFAULT '[]'::jsonb,
+    id CHAR(36) PRIMARY KEY,
+    card_id CHAR(36) NOT NULL,
+    question_type VARCHAR(64) NOT NULL,
+    question LONGTEXT NOT NULL,
+    options JSON NOT NULL,
     answer TEXT NOT NULL,
-    explanation TEXT NOT NULL,
-    difficulty TEXT NOT NULL DEFAULT 'medium',
-    related_card_title TEXT NOT NULL,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
+    explanation LONGTEXT NOT NULL,
+    difficulty VARCHAR(32) NOT NULL DEFAULT 'medium',
+    related_card_title VARCHAR(255) NOT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_quiz_questions_card
+        FOREIGN KEY (card_id) REFERENCES knowledge_cards(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS answer_records (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    question_id UUID NOT NULL REFERENCES quiz_questions(id) ON DELETE CASCADE,
-    user_answer TEXT NOT NULL,
+    id CHAR(36) PRIMARY KEY,
+    user_id CHAR(36) NOT NULL,
+    question_id CHAR(36) NOT NULL,
+    user_answer LONGTEXT NOT NULL,
     is_correct BOOLEAN NOT NULL,
-    score DOUBLE PRECISION NOT NULL CHECK (score >= 0 AND score <= 1),
+    score DOUBLE NOT NULL,
     feedback TEXT NOT NULL,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT chk_answer_records_score CHECK (score >= 0 AND score <= 1),
+    CONSTRAINT fk_answer_records_user
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    CONSTRAINT fk_answer_records_question
+        FOREIGN KEY (question_id) REFERENCES quiz_questions(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS wrong_questions (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    question_id UUID NOT NULL REFERENCES quiz_questions(id) ON DELETE CASCADE,
-    related_knowledge TEXT NOT NULL DEFAULT '',
-    error_count INTEGER NOT NULL DEFAULT 1,
-    last_wrong_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE (user_id, question_id)
-);
+    id CHAR(36) PRIMARY KEY,
+    user_id CHAR(36) NOT NULL,
+    question_id CHAR(36) NOT NULL,
+    related_knowledge TEXT NOT NULL,
+    error_count INT NOT NULL DEFAULT 1,
+    last_wrong_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_wrong_questions_user_question (user_id, question_id),
+    CONSTRAINT fk_wrong_questions_user
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    CONSTRAINT fk_wrong_questions_question
+        FOREIGN KEY (question_id) REFERENCES quiz_questions(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS review_plans (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    title TEXT NOT NULL,
-    weak_points JSONB NOT NULL DEFAULT '[]'::jsonb,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
+    id CHAR(36) PRIMARY KEY,
+    user_id CHAR(36) NOT NULL,
+    title VARCHAR(255) NOT NULL,
+    weak_points JSON NOT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_review_plans_user
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS review_tasks (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    plan_id UUID NOT NULL REFERENCES review_plans(id) ON DELETE CASCADE,
-    day INTEGER NOT NULL CHECK (day >= 1),
-    topic TEXT NOT NULL,
-    task TEXT NOT NULL,
-    reason TEXT NOT NULL,
-    is_completed BOOLEAN NOT NULL DEFAULT false,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE INDEX IF NOT EXISTS idx_documents_user_id ON documents(user_id);
-CREATE INDEX IF NOT EXISTS idx_document_chunks_document_id ON document_chunks(document_id);
-CREATE INDEX IF NOT EXISTS idx_knowledge_cards_document_id ON knowledge_cards(document_id);
-CREATE INDEX IF NOT EXISTS idx_quiz_questions_card_id ON quiz_questions(card_id);
-CREATE INDEX IF NOT EXISTS idx_answer_records_user_id ON answer_records(user_id);
-CREATE INDEX IF NOT EXISTS idx_wrong_questions_user_id ON wrong_questions(user_id);
-CREATE INDEX IF NOT EXISTS idx_review_plans_user_id ON review_plans(user_id);
-CREATE INDEX IF NOT EXISTS idx_review_tasks_plan_id ON review_tasks(plan_id);
+    id CHAR(36) PRIMARY KEY,
+    plan_id CHAR(36) NOT NULL,
+    day INT NOT NULL,
+    topic VARCHAR(255) NOT NULL,
+    task LONGTEXT NOT NULL,
+    reason LONGTEXT NOT NULL,
+    is_completed BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT chk_review_tasks_day CHECK (day >= 1),
+    CONSTRAINT fk_review_tasks_plan
+        FOREIGN KEY (plan_id) REFERENCES review_plans(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

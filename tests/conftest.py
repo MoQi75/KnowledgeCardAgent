@@ -25,5 +25,5 @@ def pytest_collection_modifyitems(config, items):
 @pytest.fixture
 def mock_env():
     """Fixture to ensure environment is clean for each test."""
-    with patch.dict(os.environ, {}, clear=True):
+    with patch.dict(os.environ, {"HOME": ".", "USERPROFILE": "."}, clear=True):
         yield

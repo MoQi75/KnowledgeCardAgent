@@ -64,7 +64,11 @@ class DocumentParserTool:
             from docx import Document
 
             document = Document(BytesIO(content))
-            parts = [paragraph.text.strip() for paragraph in document.paragraphs if paragraph.text.strip()]
+            parts = [
+                paragraph.text.strip()
+                for paragraph in document.paragraphs
+                if paragraph.text.strip()
+            ]
             for table in document.tables:
                 for row in table.rows:
                     cells = [cell.text.strip() for cell in row.cells if cell.text.strip()]
@@ -83,7 +87,9 @@ class DocumentParserTool:
         try:
             import docx2txt
         except ImportError as e:
-            raise DocumentParseError("DOCX 解析需要 python-docx 或 docx2txt，请先安装项目依赖。") from e
+            raise DocumentParseError(
+                "DOCX 解析需要 python-docx 或 docx2txt，请先安装项目依赖。"
+            ) from e
 
         temp_path: Path | None = None
         try:

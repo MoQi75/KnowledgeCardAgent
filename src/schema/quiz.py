@@ -40,4 +40,3 @@ class AnswerCheckResult(BaseModel):
     correct_answer: str = Field(description="正确答案")
     explanation: str = Field(description="解析")
     weak_point: str = Field(default="", description="暴露出的薄弱点")
-

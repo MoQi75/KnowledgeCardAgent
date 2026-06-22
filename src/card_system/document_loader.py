@@ -2,7 +2,6 @@
 
 from pathlib import Path
 
-
 SUPPORTED_TEXT_EXTENSIONS = {".txt", ".md", ".markdown"}
 
 
@@ -67,4 +66,3 @@ def _load_pdf(path: Path) -> str:
 def _title_from_text(text: str) -> str:
     first_line = next((line.strip() for line in text.splitlines() if line.strip()), "")
     return first_line[:80] or "Learning material"
-

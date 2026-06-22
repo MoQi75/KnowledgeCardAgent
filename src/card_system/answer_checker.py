@@ -5,9 +5,7 @@ import re
 from schema.quiz import AnswerCheckResult, AnswerSubmission, QuizQuestion
 
 
-async def check_answer(
-    question: QuizQuestion, submission: AnswerSubmission
-) -> AnswerCheckResult:
+async def check_answer(question: QuizQuestion, submission: AnswerSubmission) -> AnswerCheckResult:
     """使用轻量规则批改答案，后续可替换为 LLM 语义批改。"""
     expected = _normalize(question.answer)
     actual = _normalize(submission.user_answer)
@@ -28,4 +26,3 @@ async def check_answer(
 
 def _normalize(text: str) -> str:
     return re.sub(r"\s+", "", text.strip().lower())
-

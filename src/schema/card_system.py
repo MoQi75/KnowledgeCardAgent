@@ -3,7 +3,7 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from schema.card import KnowledgeCardList
-from schema.quiz import AnswerCheckResult, AnswerSubmission, QuizQuestionList
+from schema.quiz import AnswerCheckResult, QuizQuestionList
 from schema.review import ReviewPlan, StudySummary
 
 
@@ -86,4 +86,3 @@ class AnalyzeFileResponse(BaseModel):
     quizzes: list[dict[str, Any]]
     review_plan: dict[str, Any]
     summary: dict[str, Any]
-

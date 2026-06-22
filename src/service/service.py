@@ -4,7 +4,7 @@ import logging
 import warnings
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from typing import Annotated, Any
+from typing import Annotated, Any, cast
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, FastAPI, File, Form, HTTPException, UploadFile, status
@@ -27,8 +27,8 @@ from agents.card_review_agent import run_card_review_file_analysis
 from card_system.answer_checker import check_answer
 from card_system.review_planner import generate_review_plan
 from card_system.storage import (
-    CardSystemStorageError,
     DEFAULT_USER_ID,
+    CardSystemStorageError,
     create_document,
     get_document,
     get_study_summary,
@@ -175,7 +175,9 @@ async def _run_card_review_agent(text: str) -> dict[str, Any]:
         config = RunnableConfig(
             configurable={"thread_id": str(uuid4()), "user_id": "card-system-api"}
         )
-        state = await agent.ainvoke({"messages": [HumanMessage(content=text)]}, config=config)
+        state = await agent.ainvoke(
+            cast(Any, {"messages": [HumanMessage(content=text)]}), config=config
+        )
     except Exception as e:
         logger.error("Card review agent failed: %s", e)
         raise HTTPException(status_code=502, detail="Card review agent failed") from e
@@ -274,7 +276,9 @@ async def analyze_card_system_file(
     if not file_bytes:
         raise HTTPException(status_code=422, detail="file cannot be empty")
     if card_count < 1 or quiz_count < 1 or review_days < 1:
-        raise HTTPException(status_code=422, detail="card_count, quiz_count and review_days must be positive")
+        raise HTTPException(
+            status_code=422, detail="card_count, quiz_count and review_days must be positive"
+        )
 
     async def save_agent_memory(state: dict[str, Any]) -> dict[str, Any]:
         parsed = state["parsed_document"]

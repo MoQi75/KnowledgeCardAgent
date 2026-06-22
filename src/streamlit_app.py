@@ -127,7 +127,7 @@ async def main() -> None:
         page = st.radio(
             "页面",
             options=["知识卡片系统", "聊天助手"],
-            index=0,
+            index=1,
         )
 
         if st.button(":material/chat: New Chat", use_container_width=True):
@@ -624,7 +624,9 @@ def _render_document_tab(agent_client: AgentClient) -> None:
             doc for doc in documents if str(doc["id"]) == st.session_state.card_selected_document_id
         )
         st.caption(f"创建时间：{selected.get('created_at', '')}")
-        st.text_area("资料预览", value=selected.get("content", "")[:2000], height=180, disabled=True)
+        st.text_area(
+            "资料预览", value=selected.get("content", "")[:2000], height=180, disabled=True
+        )
 
 
 def _render_cards_tab(agent_client: AgentClient) -> None:
@@ -668,7 +670,9 @@ def _render_quiz_tab(agent_client: AgentClient) -> None:
     for index, question in enumerate(questions, 1):
         qid = str(question["id"])
         with st.expander(f"{index}. {question.get('question', '')}", expanded=index == 1):
-            st.caption(f"题型：{question.get('question_type', '')} | 难度：{question.get('difficulty', '')}")
+            st.caption(
+                f"题型：{question.get('question_type', '')} | 难度：{question.get('difficulty', '')}"
+            )
             options = question.get("options") or []
             if options:
                 answer = st.radio("选择答案", options=options, key=f"answer_{qid}")
@@ -679,7 +683,9 @@ def _render_quiz_tab(agent_client: AgentClient) -> None:
                 if not str(answer).strip():
                     st.warning("请先填写答案。")
                     continue
-                result = _friendly_call("提交答案", agent_client.submit_quiz_answer, qid, str(answer))
+                result = _friendly_call(
+                    "提交答案", agent_client.submit_quiz_answer, qid, str(answer)
+                )
                 if result:
                     check = result["result"]
                     st.success("回答正确。" if check["is_correct"] else "回答不正确。")

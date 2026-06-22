@@ -16,6 +16,7 @@ classifiers = [
 requires-python = ">=3.11,<3.14"
 
 dependencies = [
+    "aiomysql ~=0.2.0",
     "docx2txt ~=0.8",
     "duckduckgo-search>=7.3.0",
     "fastapi ~=0.115.5",
@@ -96,6 +97,8 @@ asyncio_default_fixture_loop_scope = "function"
 
 [tool.pytest_env]
 OPENAI_API_KEY = "sk-fake-openai-key"
+HOME = "."
+USERPROFILE = "."
 
 [tool.mypy]
 plugins = "pydantic.mypy"
@@ -107,4 +110,8 @@ follow_untyped_imports = true
 
 [[tool.mypy.overrides]]
 module = ["langchain_mcp_adapters.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["aiomysql.*", "docx2txt.*"]
 ignore_missing_imports = true

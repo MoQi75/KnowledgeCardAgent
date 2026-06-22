@@ -97,7 +97,7 @@ async def _invoke_json_model(
         return fallback
 
 
-async def parse_input_node(state: CardReviewState, config: RunnableConfig) -> CardReviewState:
+async def parse_input_node(state: CardReviewState, config: RunnableConfig) -> dict[str, Any]:
     """Load raw text or a supported document path."""
     user_input = _get_last_user_text(state)
     if not user_input:
@@ -122,7 +122,7 @@ async def parse_input_node(state: CardReviewState, config: RunnableConfig) -> Ca
     return {"input_text": input_text, "topic": topic, "errors": []}
 
 
-async def build_context_node(state: CardReviewState, config: RunnableConfig) -> CardReviewState:
+async def build_context_node(state: CardReviewState, config: RunnableConfig) -> dict[str, Any]:
     """Build RAG context; fall back to plain text if retrieval fails."""
     if state.get("errors"):
         return {}
@@ -145,9 +145,7 @@ async def build_context_node(state: CardReviewState, config: RunnableConfig) -> 
     }
 
 
-async def extract_knowledge_node(
-    state: CardReviewState, config: RunnableConfig
-) -> CardReviewState:
+async def extract_knowledge_node(state: CardReviewState, config: RunnableConfig) -> dict[str, Any]:
     """Extract core knowledge points from RAG context."""
     if state.get("errors"):
         return {}
@@ -168,7 +166,7 @@ async def extract_knowledge_node(
     return {"knowledge_points": [str(point) for point in points if str(point).strip()]}
 
 
-async def generate_cards_node(state: CardReviewState, config: RunnableConfig) -> CardReviewState:
+async def generate_cards_node(state: CardReviewState, config: RunnableConfig) -> dict[str, Any]:
     """Generate structured cards from knowledge points and RAG context."""
     if state.get("errors"):
         return {}
@@ -217,7 +215,7 @@ async def generate_cards_node(state: CardReviewState, config: RunnableConfig) ->
     return {"cards": KnowledgeCardList(cards=cards)}
 
 
-async def generate_quiz_node(state: CardReviewState, config: RunnableConfig) -> CardReviewState:
+async def generate_quiz_node(state: CardReviewState, config: RunnableConfig) -> dict[str, Any]:
     """Generate quiz questions from cards and RAG context."""
     if state.get("errors"):
         return {}
@@ -267,19 +265,22 @@ async def generate_quiz_node(state: CardReviewState, config: RunnableConfig) -> 
 
 async def generate_review_plan_node(
     state: CardReviewState, config: RunnableConfig
-) -> CardReviewState:
+) -> dict[str, Any]:
     """Generate an initial review plan from knowledge points."""
     if state.get("errors"):
         return {}
 
     weak_points = state.get("knowledge_points", [])[:5]
-    prompt = REVIEW_PLAN_PROMPT.format(
-        weak_points=json.dumps(weak_points, ensure_ascii=False, indent=2),
-        wrong_answers="[]",
-    ) + """
+    prompt = (
+        REVIEW_PLAN_PROMPT.format(
+            weak_points=json.dumps(weak_points, ensure_ascii=False, indent=2),
+            wrong_answers="[]",
+        )
+        + """
 请输出 JSON，格式为：
 {"weak_points":[],"tasks":[{"day":1,"topic":"","task":"","reason":"","is_completed":false}]}
 """
+    )
     data = await _invoke_json_model(prompt, config, {"weak_points": weak_points, "tasks": []})
     tasks: list[ReviewTask] = []
     for item in data.get("tasks", []):
@@ -309,7 +310,7 @@ async def generate_review_plan_node(
     return {"review_plan": plan}
 
 
-async def format_result_node(state: CardReviewState, config: RunnableConfig) -> CardReviewState:
+async def format_result_node(state: CardReviewState, config: RunnableConfig) -> dict[str, Any]:
     """Format cards, questions, and review tasks for the frontend."""
     if state.get("errors"):
         return {"messages": [AIMessage(content="\n".join(state["errors"]))]}
@@ -335,9 +336,7 @@ async def format_result_node(state: CardReviewState, config: RunnableConfig) -> 
         for index, question in enumerate(questions, 1)
     ]
     task_lines = [
-        f"### Day {task.day}: {task.topic}\n"
-        f"- 任务：{task.task}\n"
-        f"- 原因：{task.reason}"
+        f"### Day {task.day}: {task.topic}\n- 任务：{task.task}\n- 原因：{task.reason}"
         for task in review_plan.tasks
     ]
 
@@ -706,9 +705,7 @@ async def response_node(state: dict[str, Any]) -> dict[str, Any]:
         "agent_name": "CardReviewAgent",
         "agent_trace": state["agent_trace"],
         "cards": cards_payload,
-        "quizzes": [
-            question.model_dump(mode="json") for question in state["quizzes"].questions
-        ],
+        "quizzes": [question.model_dump(mode="json") for question in state["quizzes"].questions],
         "review_plan": review_plan,
         "summary": {
             "filename": state["parsed_document"]["filename"],

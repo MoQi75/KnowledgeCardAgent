@@ -78,4 +78,3 @@ REVIEW_PLAN_PROMPT = """你是一个复习规划助手。
 错题记录：
 {wrong_answers}
 """
-

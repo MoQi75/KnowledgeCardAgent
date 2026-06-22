@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from uuid import uuid4
 
 from pydantic import BaseModel, Field
@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 
 def utc_now() -> datetime:
     """统一生成带时区的创建时间。"""
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 class KnowledgeCard(BaseModel):
@@ -29,4 +29,3 @@ class KnowledgeCardList(BaseModel):
     """知识卡片集合。"""
 
     cards: list[KnowledgeCard] = Field(default_factory=list, description="知识卡片列表")
-

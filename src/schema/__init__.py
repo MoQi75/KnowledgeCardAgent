@@ -1,4 +1,3 @@
-from schema.models import AllModelEnum
 from schema.card import KnowledgeCard, KnowledgeCardList
 from schema.card_system import (
     AgentTraceItem,
@@ -13,6 +12,7 @@ from schema.card_system import (
     StudySummaryResponse,
     SubmitAnswerResponse,
 )
+from schema.models import AllModelEnum
 from schema.quiz import (
     AnswerCheckResult,
     AnswerSubmission,
