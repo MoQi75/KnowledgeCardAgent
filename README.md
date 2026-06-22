@@ -1,276 +1,315 @@
-# 🧰 AI Agent Service Toolkit
+# 基于 LangGraph + FastAPI + RAG 的知识卡片生成与复习规划智能体系统
 
-[![build status](https://github.com/JoshuaC215/agent-service-toolkit/actions/workflows/test.yml/badge.svg)](https://github.com/JoshuaC215/agent-service-toolkit/actions/workflows/test.yml) [![codecov](https://codecov.io/github/JoshuaC215/agent-service-toolkit/graph/badge.svg?token=5MTJSYWD05)](https://codecov.io/github/JoshuaC215/agent-service-toolkit) [![Python Version](https://img.shields.io/python/required-version-toml?tomlFilePath=https%3A%2F%2Fraw.githubusercontent.com%2FJoshuaC215%2Fagent-service-toolkit%2Frefs%2Fheads%2Fmain%2Fpyproject.toml)](https://github.com/JoshuaC215/agent-service-toolkit/blob/main/pyproject.toml)
-[![GitHub License](https://img.shields.io/github/license/JoshuaC215/agent-service-toolkit)](https://github.com/JoshuaC215/agent-service-toolkit/blob/main/LICENSE) [![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_red.svg)](https://agent-service-toolkit.streamlit.app/)
+中文 | [English](#cardreviewagent-knowledge-card-generation-and-review-planning-system)
 
-A full toolkit for running an AI agent service built with LangGraph, FastAPI and Streamlit.
+本项目是一个面向学习资料处理的智能体系统。用户可以上传 PDF、DOCX、TXT 或 Markdown 学习资料，由 `CardReviewAgent` 自动完成资料解析、RAG 检索、知识卡片生成、自测题生成、复习计划生成和学习记忆更新。
 
-It includes a [LangGraph](https://langchain-ai.github.io/langgraph/) agent, a [FastAPI](https://fastapi.tiangolo.com/) service to serve it, a client to interact with the service, and a [Streamlit](https://streamlit.io/) app that uses the client to provide a chat interface. Data structures and settings are built with [Pydantic](https://github.com/pydantic/pydantic).
+## 核心能力
 
-This project offers a template for you to easily build and run your own agents using the LangGraph framework. It demonstrates a complete setup from agent definition to user interface, making it easier to get started with LangGraph-based projects by providing a full, robust toolkit.
+- `CardReviewAgent` 智能体工作流：文件解析、意图识别、任务规划、RAG 检索、卡片生成、自测题生成、复习计划生成、结果校验、记忆更新。
+- 多格式学习资料上传：支持 `.pdf`、`.docx`、`.txt`、`.md`、`.markdown`。
+- 知识卡片生成：输出标题、摘要、关键词、解释、示例、常见误区、相关知识点和原文片段。
+- 自测题生成：基于知识卡片生成问答题，包含答案、解析、难度和关联卡片。
+- 复习计划生成：根据卡片和薄弱点生成多天复习任务。
+- 智能体执行过程展示：前端展示 `agent_trace`，体现每一步工具调用和状态。
+- 学习记忆：优先保存到 PostgreSQL，数据库不可用时提供内存 fallback。
 
-**[🎥 Watch a video walkthrough of the repo and app](https://www.youtube.com/watch?v=pdYVHw_YCNY)**
+## 技术栈
 
-## Overview
+- 后端：FastAPI、LangGraph、Pydantic、PostgreSQL、pypdf、python-docx
+- 前端：Next.js、React、TypeScript、Tailwind CSS、shadcn/ui、lucide-react
+- RAG：当前提供关键词检索 fallback，保留后续接入向量库的结构
+- 包管理：uv、npm
 
-### [Try the app!](https://agent-service-toolkit.streamlit.app/)
+## 关键目录
 
-<a href="https://agent-service-toolkit.streamlit.app/"><img src="media/app_screenshot.png" width="600"></a>
+```text
+src/
+  agents/card_review_agent.py          # CardReviewAgent 智能体流程
+  card_system/document_parser_tool.py  # PDF/DOCX/TXT/Markdown 解析工具
+  card_system/rag.py                   # 文本切片和 RAG 检索 fallback
+  card_system/storage.py               # 知识卡片系统持久化
+  service/service.py                   # FastAPI 服务和接口
+  schema/                              # 后端请求/响应模型
 
-### Quickstart
+frontend/
+  src/app/(main)/dashboard/default/    # 智能体学习仪表盘
+  src/app/(main)/dashboard/_components/knowledge-studio/
+                                      # 资料库、知识卡片、自测、复习计划页面
+  src/lib/card-system-api.ts           # 前端 API 封装
+```
 
-Run directly in python
+## 快速启动
+
+### 1. 安装后端依赖
 
 ```sh
-# At least one LLM API key is required
-echo 'OPENAI_API_KEY=your_openai_api_key' >> .env
+uv sync
+```
 
-# uv is the recommended way to install agent-service-toolkit, but "pip install ." also works
-# For uv installation options, see: https://docs.astral.sh/uv/getting-started/installation/
-curl -LsSf https://astral.sh/uv/0.7.19/install.sh | sh
+如需连接数据库，请在 `.env` 中配置 PostgreSQL：
 
-# Install dependencies. "uv sync" creates .venv automatically
-uv sync --frozen
-source .venv/bin/activate
+```env
+POSTGRES_USER=postgres
+POSTGRES_PASSWORD=postgres
+POSTGRES_HOST=localhost
+POSTGRES_PORT=5432
+POSTGRES_DB=postgres
+```
+
+### 2. 启动后端
+
+```sh
 python src/run_service.py
-
-# In another shell
-source .venv/bin/activate
-streamlit run src/streamlit_app.py
 ```
 
-Run with docker
+默认服务地址：`http://localhost:8080`
+
+### 3. 安装并启动前端
 
 ```sh
-echo 'OPENAI_API_KEY=your_openai_api_key' >> .env
-docker compose watch
+cd frontend
+npm install
+npm run dev
 ```
 
-### Full-stack workspace
+默认前端地址：`http://localhost:3000/dashboard`
 
-The Next.js frontend has been integrated into the `frontend/` directory.
+如果后端不是默认地址，请设置：
 
-Backend service:
+```env
+NEXT_PUBLIC_API_BASE_URL=http://localhost:8080
+```
+
+## 上传资料智能分析接口
+
+```http
+POST /card-system/agent/analyze-file
+Content-Type: multipart/form-data
+```
+
+请求参数：
+
+| 参数 | 说明 | 默认值 |
+| --- | --- | --- |
+| `file` | 上传文件，支持 PDF/DOCX/TXT/Markdown | 必填 |
+| `user_id` | 用户 ID | `default_user` |
+| `learning_goal` | 学习目标 | 可选 |
+| `card_count` | 知识卡片数量 | `8` |
+| `quiz_count` | 自测题数量 | `5` |
+| `review_days` | 复习计划天数 | `7` |
+
+响应字段：
+
+```json
+{
+  "document_id": "...",
+  "agent_name": "CardReviewAgent",
+  "agent_trace": [],
+  "cards": [],
+  "quizzes": [],
+  "review_plan": {},
+  "summary": {}
+}
+```
+
+`agent_trace` 用于前端展示智能体执行过程，每一步包含：
+
+```json
+{
+  "step": 1,
+  "name": "文件解析",
+  "status": "success",
+  "detail": "已解析 PDF 文件，共提取 3264 字。"
+}
+```
+
+## 前端页面
+
+- `/dashboard/default`：CardReviewAgent 智能体学习仪表盘
+- `/dashboard/documents`：资料库与资料智能分析
+- `/dashboard/cards`：知识卡片
+- `/dashboard/quiz`：自测题
+- `/dashboard/wrong-questions`：错题本
+- `/dashboard/review-plan`：复习计划
+- `/dashboard/stats`：学习统计
+- `/dashboard/settings`：系统设置
+
+## 检查命令
+
+后端：
 
 ```sh
-cd F:\GraduationProject\KnowledgeCardAgent
+python -m compileall src
+```
+
+前端：
+
+```sh
+cd frontend
+npm run lint
+npm run build
+```
+
+## 许可证
+
+本项目基于 MIT License。
+
+---
+
+# CardReviewAgent Knowledge Card Generation and Review Planning System
+
+[中文](#基于-langgraph--fastapi--rag-的知识卡片生成与复习规划智能体系统) | English
+
+This project is an agentic learning system for study material analysis. Users can upload PDF, DOCX, TXT, or Markdown files, and `CardReviewAgent` automatically parses the material, retrieves RAG context, generates knowledge cards, creates quiz questions, builds a review plan, and updates learning memory.
+
+## Core Capabilities
+
+- `CardReviewAgent` workflow: file parsing, intent recognition, task planning, RAG retrieval, card generation, quiz generation, review planning, quality check, and memory update.
+- Multi-format uploads: `.pdf`, `.docx`, `.txt`, `.md`, and `.markdown`.
+- Knowledge card generation: title, summary, keywords, explanation, example, common mistakes, related points, and source text.
+- Quiz generation: question, answer, explanation, difficulty, and related card title.
+- Review planning: daily review tasks based on generated cards and weak points.
+- Agent trace visualization: the frontend displays `agent_trace` to show each agent step and tool call.
+- Learning memory: PostgreSQL persistence is used first, with an in-memory fallback when storage is unavailable.
+
+## Tech Stack
+
+- Backend: FastAPI, LangGraph, Pydantic, PostgreSQL, pypdf, python-docx
+- Frontend: Next.js, React, TypeScript, Tailwind CSS, shadcn/ui, lucide-react
+- RAG: keyword retrieval fallback with a structure ready for vector database integration
+- Package management: uv, npm
+
+## Key Directories
+
+```text
+src/
+  agents/card_review_agent.py          # CardReviewAgent workflow
+  card_system/document_parser_tool.py  # PDF/DOCX/TXT/Markdown parser
+  card_system/rag.py                   # Text chunking and RAG fallback
+  card_system/storage.py               # Knowledge card persistence
+  service/service.py                   # FastAPI service and routes
+  schema/                              # Backend request/response schemas
+
+frontend/
+  src/app/(main)/dashboard/default/    # Agent learning dashboard
+  src/app/(main)/dashboard/_components/knowledge-studio/
+                                      # Documents, cards, quiz, review pages
+  src/lib/card-system-api.ts           # Frontend API client
+```
+
+## Quick Start
+
+### 1. Install backend dependencies
+
+```sh
+uv sync
+```
+
+Configure PostgreSQL in `.env` if persistence is required:
+
+```env
+POSTGRES_USER=postgres
+POSTGRES_PASSWORD=postgres
+POSTGRES_HOST=localhost
+POSTGRES_PORT=5432
+POSTGRES_DB=postgres
+```
+
+### 2. Start the backend
+
+```sh
 python src/run_service.py
 ```
 
-Frontend dashboard:
+Default service URL: `http://localhost:8080`
+
+### 3. Install and start the frontend
 
 ```sh
-cd F:\GraduationProject\KnowledgeCardAgent\frontend
-npm.cmd install --cache .\.npm-cache
-npm.cmd run dev
+cd frontend
+npm install
+npm run dev
 ```
 
-Open the dashboard at `http://localhost:3000/dashboard`. The frontend reads the backend base URL from `NEXT_PUBLIC_API_BASE_URL`; if it is not set, it uses `http://localhost:8080`.
+Default frontend URL: `http://localhost:3000/dashboard`
 
-### Architecture Diagram
+Set the backend URL when needed:
 
-<img src="media/agent_architecture.png" width="600">
-
-### Key Features
-
-1. **LangGraph Agent and latest features**: A customizable agent built using the LangGraph framework. Implements the latest LangGraph v1.0 features including human in the loop with `interrupt()`, flow control with `Command`, long-term memory with `Store`, and `langgraph-supervisor`.
-1. **FastAPI Service**: Serves the agent with both streaming and non-streaming endpoints.
-1. **Advanced Streaming**: A novel approach to support both token-based and message-based streaming.
-1. **Streamlit Interface**: Provides a user-friendly chat interface for interacting with the agent, including voice input and output.
-1. **Multiple Agent Support**: Run multiple agents in the service and call by URL path. Available agents and models are described in `/info`
-1. **Asynchronous Design**: Utilizes async/await for efficient handling of concurrent requests.
-1. **Content Moderation**: Implements Safeguard for content moderation (requires Groq API key).
-1. **RAG Agent**: A basic RAG agent implementation using ChromaDB - see [docs](docs/RAG_Assistant.md).
-1. **Feedback Mechanism**: Includes a star-based feedback system integrated with LangSmith.
-1. **Docker Support**: Includes Dockerfiles and a docker compose file for easy development and deployment.
-1. **Testing**: Includes robust unit and integration tests for the full repo.
-
-### Key Files
-
-The repository is structured as follows:
-
-- `src/agents/`: Defines several agents with different capabilities
-- `src/schema/`: Defines the protocol schema
-- `src/core/`: Core modules including LLM definition and settings
-- `src/service/service.py`: FastAPI service to serve the agents
-- `src/client/client.py`: Client to interact with the agent service
-- `src/streamlit_app.py`: Streamlit app providing a chat interface
-- `tests/`: Unit and integration tests
-
-## Setup and Usage
-
-1. Clone the repository:
-
-   ```sh
-   git clone https://github.com/JoshuaC215/agent-service-toolkit.git
-   cd agent-service-toolkit
-   ```
-
-2. Set up environment variables:
-   Create a `.env` file in the root directory. At least one LLM API key or configuration is required. See the [`.env.example` file](./.env.example) for a full list of available environment variables, including a variety of model provider API keys, header-based authentication, LangSmith tracing, testing and development modes, and OpenWeatherMap API key.
-
-3. You can now run the agent service and the Streamlit app locally, either with Docker or just using Python. The Docker setup is recommended for simpler environment setup and immediate reloading of the services when you make changes to your code.
-
-### Additional setup for specific AI providers
-
-- [Setting up Ollama](docs/Ollama.md)
-- [Setting up VertexAI](docs/VertexAI.md)
-- [Setting up RAG with ChromaDB](docs/RAG_Assistant.md)
-
-### Building or customizing your own agent
-
-To customize the agent for your own use case:
-
-1. Add your new agent to the `src/agents` directory. You can copy `research_assistant.py` or `chatbot.py` and modify it to change the agent's behavior and tools.
-1. Import and add your new agent to the `agents` dictionary in `src/agents/agents.py`. Your agent can be called by `/<your_agent_name>/invoke` or `/<your_agent_name>/stream`.
-1. Adjust the Streamlit interface in `src/streamlit_app.py` to match your agent's capabilities.
-
-
-### Handling Private Credential files
-
-If your agents or chosen LLM require file-based credential files or certificates, the `privatecredentials/` has been provided for your development convenience. All contents, excluding the `.gitkeep` files, are ignored by git and docker's build process. See [Working with File-based Credentials](docs/File_Based_Credentials.md) for suggested use.
-
-
-### Docker Setup
-
-This project includes a Docker setup for easy development and deployment. The `compose.yaml` file defines three services: `postgres`, `agent_service` and `streamlit_app`. The `Dockerfile` for each service is in their respective directories.
-
-For local development, we recommend using [docker compose watch](https://docs.docker.com/compose/file-watch/). This feature allows for a smoother development experience by automatically updating your containers when changes are detected in your source code.
-
-1. Make sure you have Docker and Docker Compose (>= [v2.23.0](https://docs.docker.com/compose/release-notes/#2230)) installed on your system.
-
-2. Create a `.env` file from the `.env.example`. At minimum, you need to provide an LLM API key (e.g., OPENAI_API_KEY).
-   ```sh
-   cp .env.example .env
-   # Edit .env to add your API keys
-   ```
-
-3. Build and launch the services in watch mode:
-
-   ```sh
-   docker compose watch
-   ```
-
-   This will automatically:
-   - Start a PostgreSQL database service that the agent service connects to
-   - Start the agent service with FastAPI
-   - Start the Streamlit app for the user interface
-
-4. The services will now automatically update when you make changes to your code:
-   - Changes in the relevant python files and directories will trigger updates for the relevant services.
-   - NOTE: If you make changes to the `pyproject.toml` or `uv.lock` files, you will need to rebuild the services by running `docker compose up --build`.
-
-5. Access the Streamlit app by navigating to `http://localhost:8501` in your web browser.
-
-6. The agent service API will be available at `http://0.0.0.0:8080`. You can also use the OpenAPI docs at `http://0.0.0.0:8080/redoc`.
-
-7. Use `docker compose down` to stop the services.
-
-This setup allows you to develop and test your changes in real-time without manually restarting the services.
-
-### Building other apps on the AgentClient
-
-The repo includes a generic `src/client/client.AgentClient` that can be used to interact with the agent service. This client is designed to be flexible and can be used to build other apps on top of the agent. It supports both synchronous and asynchronous invocations, and streaming and non-streaming requests.
-
-See the `src/run_client.py` file for full examples of how to use the `AgentClient`. A quick example:
-
-```python
-from client import AgentClient
-client = AgentClient()
-
-response = client.invoke("Tell me a brief joke?")
-response.pretty_print()
-# ================================== Ai Message ==================================
-#
-# A man walked into a library and asked the librarian, "Do you have any books on Pavlov's dogs and Schrödinger's cat?"
-# The librarian replied, "It rings a bell, but I'm not sure if it's here or not."
-
+```env
+NEXT_PUBLIC_API_BASE_URL=http://localhost:8080
 ```
 
-### Development with LangGraph Studio
+## File Analysis API
 
-The agent supports [LangGraph Studio](https://langchain-ai.github.io/langgraph/concepts/langgraph_studio/), the IDE for developing agents in LangGraph.
+```http
+POST /card-system/agent/analyze-file
+Content-Type: multipart/form-data
+```
 
-`langgraph-cli[inmem]` is installed with `uv sync`. You can simply add your `.env` file to the root directory as described above, and then launch LangGraph Studio with `langgraph dev`. Customize `langgraph.json` as needed. See the [local quickstart](https://langchain-ai.github.io/langgraph/cloud/how-tos/studio/quick_start/#local-development-server) to learn more.
+Request fields:
 
-### Local development without Docker
+| Field | Description | Default |
+| --- | --- | --- |
+| `file` | Uploaded PDF/DOCX/TXT/Markdown file | Required |
+| `user_id` | User ID | `default_user` |
+| `learning_goal` | Learning goal | Optional |
+| `card_count` | Number of knowledge cards | `8` |
+| `quiz_count` | Number of quiz questions | `5` |
+| `review_days` | Number of review days | `7` |
 
-You can also run the agent service and the Streamlit app locally without Docker, just using a Python virtual environment.
+Response shape:
 
-1. Create a virtual environment and install dependencies:
+```json
+{
+  "document_id": "...",
+  "agent_name": "CardReviewAgent",
+  "agent_trace": [],
+  "cards": [],
+  "quizzes": [],
+  "review_plan": {},
+  "summary": {}
+}
+```
 
-   ```sh
-   uv sync --frozen
-   source .venv/bin/activate
-   ```
+Each `agent_trace` item follows this structure:
 
-2. Run the FastAPI server:
+```json
+{
+  "step": 1,
+  "name": "File Parsing",
+  "status": "success",
+  "detail": "Parsed the PDF file and extracted 3264 characters."
+}
+```
 
-   ```sh
-   python src/run_service.py
-   ```
+## Frontend Pages
 
-3. In a separate terminal, run the Streamlit app:
+- `/dashboard/default`: CardReviewAgent learning dashboard
+- `/dashboard/documents`: document library and file analysis
+- `/dashboard/cards`: knowledge cards
+- `/dashboard/quiz`: quiz questions
+- `/dashboard/wrong-questions`: wrong question notebook
+- `/dashboard/review-plan`: review plan
+- `/dashboard/stats`: learning statistics
+- `/dashboard/settings`: system settings
 
-   ```sh
-   streamlit run src/streamlit_app.py
-   ```
+## Validation
 
-4. Open your browser and navigate to the URL provided by Streamlit (usually `http://localhost:8501`).
+Backend:
 
-## Knowledge Card System Database
+```sh
+python -m compileall src
+```
 
-The knowledge card generation and review planning system uses the existing PostgreSQL service in `compose.yaml`. Connection settings are read from environment variables:
+Frontend:
 
-- `POSTGRES_USER`
-- `POSTGRES_PASSWORD`
-- `POSTGRES_HOST`
-- `POSTGRES_PORT`
-- `POSTGRES_DB`
-
-Initialize the card system tables with `src/card_system/db_schema.sql` or by calling `init_card_system_db()` from `src/card_system/storage.py`.
-
-The database schema contains these tables:
-
-- `users`: stores users and includes a default user for local single-user workflows.
-- `documents`: stores learning materials, including title, content, optional file path, and creation time.
-- `document_chunks`: stores document chunks for later RAG indexing and retrieval.
-- `knowledge_cards`: stores generated knowledge cards, including summary, keywords, explanation, examples, mistakes, related concepts, and source text.
-- `quiz_questions`: stores generated quiz questions linked to knowledge cards.
-- `answer_records`: stores user answers, correctness, score, and feedback.
-- `wrong_questions`: stores wrong-answer history and error counts for review planning.
-- `review_plans`: stores review plan metadata and weak points.
-- `review_tasks`: stores per-day review tasks linked to a review plan.
-
-## Projects built with or inspired by agent-service-toolkit
-
-The following are a few of the public projects that drew code or inspiration from this repo.
-
-- **[PolyRAG](https://github.com/QuentinFuxa/PolyRAG)** - Extends agent-service-toolkit with RAG capabilities over both PostgreSQL databases and PDF documents.
-- **[alexrisch/agent-web-kit](https://github.com/alexrisch/agent-web-kit)** - A Next.JS frontend for agent-service-toolkit
-- **[raushan-in/dapa](https://github.com/raushan-in/dapa)** - Digital Arrest Protection App (DAPA) enables users to report financial scams and frauds efficiently via a user-friendly platform.
-
-**Please create a pull request editing the README or open a discussion with any new ones to be added!** Would love to include more projects.
-
-## Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request. Currently the tests need to be run using the local development without Docker setup. To run the tests for the agent service:
-
-1. Ensure you're in the project root directory and have activated your virtual environment.
-
-2. Install the development dependencies and pre-commit hooks:
-
-   ```sh
-   uv sync --frozen
-   pre-commit install
-   ```
-
-3. Run the tests using pytest:
-
-   ```sh
-   pytest
-   ```
+```sh
+cd frontend
+npm run lint
+npm run build
+```
 
 ## License
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+This project is licensed under the MIT License.
