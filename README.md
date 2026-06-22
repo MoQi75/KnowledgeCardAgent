@@ -151,10 +151,6 @@ npm run lint
 npm run build
 ```
 
-## 许可证
-
-本项目基于 MIT License。
-
 ---
 
 # CardReviewAgent Knowledge Card Generation and Review Planning System
@@ -310,6 +306,3 @@ npm run lint
 npm run build
 ```
 
-## License
-
-This project is licensed under the MIT License.
